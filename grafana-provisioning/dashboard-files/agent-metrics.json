@@ -1,0 +1,93 @@
+{
+  "title": "shared-services-classifier — Agente",
+  "uid": "ss-agent-metrics",
+  "tags": ["shared-services", "langchain", "agent"],
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests por minuto — /process",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{handler=\"/process\"}[1m])",
+          "legendFormat": "req/min"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Latencia p95 — /process (segundos)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{handler=\"/process\"}[5m]))",
+          "legendFormat": "p95 latencia"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tasa de éxito — validated: true",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{handler=\"/process\", status_code=\"200\"}[5m])",
+          "legendFormat": "exitosos"
+        },
+        {
+          "expr": "rate(http_requests_total{handler=\"/process\", status_code!=\"200\"}[5m])",
+          "legendFormat": "errores"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Latencia p95 — /ask langchain-api (segundos)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{handler=\"/ask\"}[5m]))",
+          "legendFormat": "p95 LLM latencia"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "CPU host — impacto inferencia Ollama (%)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 - (avg by(instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
+          "legendFormat": "CPU %"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "RAM disponible (GB)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes / 1024 / 1024 / 1024",
+          "legendFormat": "RAM disponible GB"
+        }
+      ]
+    }
+  ]
+}

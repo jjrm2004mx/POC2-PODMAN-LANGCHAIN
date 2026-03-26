@@ -1,0 +1,79 @@
+# =============================================================================
+# prometheus.yml — shared-services-classifier
+# Ruta: ~/podman/ai-stack/prometheus.yml
+# Marzo 2026
+# =============================================================================
+# Scrape cada 15s a todos los servicios del stack que exponen /metrics
+# Acceso: http://localhost:9090
+# =============================================================================
+
+global:
+  scrape_interval: 15s         # Frecuencia de recolección de métricas
+  evaluation_interval: 15s     # Frecuencia de evaluación de reglas de alertas
+  scrape_timeout: 10s          # Timeout por scrape (debe ser < scrape_interval)
+
+# =============================================================================
+# JOBS DE SCRAPING
+# Usar nombre del servicio como hostname — nunca localhost dentro de la red
+# =============================================================================
+
+scrape_configs:
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — métricas propias
+  # ---------------------------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---------------------------------------------------------------------------
+  # LangChain Agent — métricas del agente LangGraph
+  # Métricas clave:
+  #   agent_runs_total{origen, status}
+  #   agent_iterations_histogram_bucket
+  #   agent_llm_latency_seconds_bucket
+  #   agent_validation_failures_total
+  #   agent_cache_hit_total
+  # ---------------------------------------------------------------------------
+  - job_name: "langchain-agent"
+    static_configs:
+      - targets: ["langchain-agent:8001"]
+        labels:
+          service: "langchain-agent"
+          layer: "agent"
+
+  # ---------------------------------------------------------------------------
+  # LangChain API — métricas del gateway de IA
+  # Métricas clave:
+  #   http_requests_total{provider}
+  #   http_request_duration_seconds
+  #   cache_hits_total / cache_misses_total
+  # ---------------------------------------------------------------------------
+  - job_name: "langchain-api"
+    static_configs:
+      - targets: ["langchain-api:8000"]
+        labels:
+          service: "langchain-api"
+          layer: "api"
+
+  # ---------------------------------------------------------------------------
+  # Ollama — métricas del servidor de modelos locales
+  # ---------------------------------------------------------------------------
+  - job_name: "ollama"
+    static_configs:
+      - targets: ["ollama:11434"]
+        labels:
+          service: "ollama"
+          layer: "llm"
+
+  # ---------------------------------------------------------------------------
+  # Node Exporter — métricas del host (best effort en WSL2)
+  # Métricas clave: CPU, RAM, disco, carga del sistema
+  # Útil para monitorear impacto de inferencia Ollama en el host
+  # ---------------------------------------------------------------------------
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "node-exporter"
+          layer: "host"

@@ -1,0 +1,46 @@
+# =============================================================================
+# promtail.yml — shared-services-classifier
+# Ruta: ~/podman/ai-stack/promtail.yml
+# Marzo 2026
+# =============================================================================
+# Lee logs desde journald.
+# Compatible con:
+#   - Podman rootless en WSL2    (logDriver: journald, archivos en /var/log/journal)
+#   - Linux nativo en producción (logDriver: journald es el default de Podman)
+#
+# NOTA source_labels:
+#   Promtail 2.9.0 mapea campos de journald como __journal_ + nombre en minúsculas
+#   El campo de Podman es CONTAINER_NAME → source_label: [__journal_container_name]
+#
+# NOTA WSL2 permisos:
+#   Los archivos de journal requieren lectura por others para Podman rootless:
+#   sudo chmod o+r /var/log/journal/<machine-id>/*.journal
+# =============================================================================
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+
+  - job_name: journal
+    journal:
+      max_age: 12h
+      path: /var/log/journal
+      labels:
+        job: journal
+    relabel_configs:
+      # Hostname del host
+      - source_labels: [__journal__hostname]
+        target_label: host
+      # Nombre del contenedor Podman
+      # Campo journald: CONTAINER_NAME → Promtail lo expone como __journal_container_name
+      # Permite filtrar en Grafana: {container_name="langchain-agent"}
+      - source_labels: [__journal_container_name]
+        target_label: container_name

@@ -1,0 +1,27 @@
+# =============================================================================
+# langchain-agent/requirements.txt
+# =============================================================================
+
+# Framework web
+fastapi
+uvicorn[standard]
+
+# LangChain + LangGraph
+langchain
+langchain-core
+langgraph
+
+# Validación y estado
+pydantic
+
+# Base de datos async
+asyncpg
+
+# HTTP cliente async (llamadas entre servicios)
+httpx
+
+# Cache y estado
+redis
+
+# Observabilidad
+prometheus-fastapi-instrumentator

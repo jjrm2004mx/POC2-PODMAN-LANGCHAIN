@@ -1,0 +1,19 @@
+# =============================================================================
+# grafana-provisioning/dashboards/dashboards.yml
+# Provisioning automático de dashboards en Grafana
+# Ruta en contenedor: /etc/grafana/provisioning/dashboards/
+# =============================================================================
+
+apiVersion: 1
+
+providers:
+
+  - name: shared-services-classifier
+    orgId: 1
+    folder: "shared-services-classifier"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboard-files

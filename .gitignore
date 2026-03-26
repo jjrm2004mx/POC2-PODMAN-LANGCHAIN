@@ -1,0 +1,29 @@
+# Volúmenes de contenedores
+postgres_data/
+ollama_data/
+grafana_data/
+n8n_data/
+redis_data/
+loki_data/
+
+# Variables de entorno
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

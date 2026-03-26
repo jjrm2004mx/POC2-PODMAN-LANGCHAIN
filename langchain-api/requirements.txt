@@ -1,0 +1,24 @@
+# =============================================================================
+# langchain-api/requirements.txt
+# =============================================================================
+
+# Framework web
+fastapi
+uvicorn[standard]
+
+# LangChain core + adapters por provider
+langchain
+langchain-core
+langchain-ollama
+langchain-openai
+langchain-anthropic
+langchain-google-genai
+
+# Validación
+pydantic
+
+# Cache
+redis
+
+# Observabilidad
+prometheus-fastapi-instrumentator
