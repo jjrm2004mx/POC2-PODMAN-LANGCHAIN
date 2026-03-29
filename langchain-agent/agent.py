@@ -110,7 +110,7 @@ FORMATO FINAL OBLIGATORIO:
 
 async def classify_node(state: AgentState) -> AgentState:
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutos para llama3:latest
             response = await client.post(
                 f"{LANGCHAIN_API_URL}/ask",
                 json={

@@ -83,7 +83,7 @@ def debug_classify(texto: str, provider: str = "ollama"):
         response = httpx.post(
             f"{api_url}/ask",
             json=payload,
-            timeout=120.0,
+            timeout=300.0,  # 5 minutos — llama3:latest puede tardar hasta 2.5 min en CPU
         )
         response.raise_for_status()
         
