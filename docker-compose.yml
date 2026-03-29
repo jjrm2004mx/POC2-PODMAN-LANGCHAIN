@@ -45,6 +45,11 @@ services:
       - AGENT_MAX_ITERATIONS=${AGENT_MAX_ITERATIONS:-5}
       - AGENT_DOMAINS=${AGENT_DOMAINS:-IT,cliente,operaciones,otro}
       - VALIDATION_ENABLED=${VALIDATION_ENABLED:-true}
+      - FUZZY_THRESHOLD=${FUZZY_THRESHOLD:-80}
+      - CATEGORIES_IT=${CATEGORIES_IT}
+      - CATEGORIES_CLIENTE=${CATEGORIES_CLIENTE}
+      - CATEGORIES_OPERACIONES=${CATEGORIES_OPERACIONES}
+      - CATEGORIES_OTRO=${CATEGORIES_OTRO}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:
