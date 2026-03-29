@@ -218,7 +218,11 @@ async def validate_node(state: AgentState) -> AgentState:
         return state
 
     try:
-        ClasificacionSchema(**state.classification)
+        validated = ClasificacionSchema(**state.classification)
+        # Escribir de vuelta los campos corregidos por fuzzy matching
+        state.classification["categoria"]           = validated.categoria
+        state.classification["categoria_propuesta"] = validated.categoria_propuesta
+        state.classification["requiere_revision"]   = validated.requiere_revision
         state.validated = True
         state.error = None
     except Exception as e:
