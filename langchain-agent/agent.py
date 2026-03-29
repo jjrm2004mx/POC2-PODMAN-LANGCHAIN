@@ -7,12 +7,43 @@ import os
 import json
 import httpx
 import asyncpg
+from difflib import SequenceMatcher
 from langgraph.graph import StateGraph, END
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, root_validator
 from typing import Optional
 
 AGENT_DOMAINS = os.getenv("AGENT_DOMAINS", "IT,cliente,operaciones,otro").split(",")
 MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))
+FUZZY_THRESHOLD = int(os.getenv("FUZZY_THRESHOLD", "80"))
+
+def _get_categorias(dominio: str) -> list:
+    raw = os.getenv(f"CATEGORIES_{dominio.upper()}", "")
+    return [c.strip().lower() for c in raw.split(",") if c.strip()] if raw else []
+
+def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
+    """Returns (categoria_final, categoria_propuesta, requiere_revision)"""
+    cats = _get_categorias(dominio)
+    if not cats:
+        return categoria, None, False  # Sin lista configurada → aceptar tal cual
+
+    cat_lower = categoria.lower().strip()
+
+    # Match exacto (case-insensitive)
+    for c in cats:
+        if c == cat_lower:
+            return c, None, False
+
+    # Fuzzy match — mejor puntuación
+    best, best_score = max(
+        ((c, SequenceMatcher(None, cat_lower, c).ratio() * 100) for c in cats),
+        key=lambda x: x[1],
+    )
+
+    if best_score >= FUZZY_THRESHOLD:
+        return best, categoria, False  # Corregida; guardar original como propuesta
+
+    # Categoría desconocida → marcar para revisión
+    return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
 DATABASE_URL = (
     f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
@@ -27,6 +58,8 @@ class ClasificacionSchema(BaseModel):
     categoria: str
     prioridad: str
     confianza: float
+    categoria_propuesta: Optional[str] = None
+    requiere_revision: bool = False
 
     @validator("dominio")
     def dominio_valido(cls, v):
@@ -58,6 +91,17 @@ class ClasificacionSchema(BaseModel):
         if not (0.0 <= v <= 1.0):
             raise ValueError(f"confianza {v} DEBE estar entre 0.0 y 1.0")
         return v
+
+    @root_validator
+    def aplicar_fuzzy(cls, values):
+        dominio = values.get("dominio")
+        categoria = values.get("categoria")
+        if dominio and categoria:
+            final, propuesta, revision = fuzzy_match_categoria(categoria, dominio)
+            values["categoria"] = final
+            values["categoria_propuesta"] = propuesta
+            values["requiere_revision"] = revision
+        return values
 
 class AgentState(BaseModel):
     texto: str
@@ -186,16 +230,20 @@ async def validate_node(state: AgentState) -> AgentState:
 async def save_node(state: AgentState) -> AgentState:
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        dominio = state.classification["dominio"]
-        categoria = state.classification["categoria"]
-        prioridad = state.classification["prioridad"]
-        confianza = state.classification["confianza"]
+        dominio             = state.classification["dominio"]
+        categoria           = state.classification["categoria"]
+        prioridad           = state.classification["prioridad"]
+        confianza           = state.classification["confianza"]
+        categoria_propuesta = state.classification.get("categoria_propuesta")
+        requiere_revision   = state.classification.get("requiere_revision", False)
 
         # Detectar si es fallback (confianza 0.0 + dominio "otro")
         is_fallback = dominio == "otro" and confianza == 0.0
-        
+
         if is_fallback:
             alerta = f"⚠️ FALLBACK: Sin clasificación válida tras {state.iterations} intentos. Revisar manualmente."
+        elif requiere_revision:
+            alerta = f"🔍 REVISIÓN: categoría '{categoria}' no reconocida, requiere validación manual"
         elif prioridad == "alta":
             alerta = f"🚨 URGENTE: {categoria} con prioridad alta"
         else:
@@ -203,8 +251,9 @@ async def save_node(state: AgentState) -> AgentState:
 
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
-               (texto, dominio, categoria, prioridad, confianza, origen, remitente, alerta)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               (texto, dominio, categoria, prioridad, confianza, origen, remitente, alerta,
+                categoria_propuesta, requiere_revision)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                RETURNING id""",
             state.texto,
             dominio,
@@ -214,10 +263,14 @@ async def save_node(state: AgentState) -> AgentState:
             state.origen,
             state.remitente,
             alerta,
+            categoria_propuesta,
+            requiere_revision,
         )
 
         state.classification["ticket_id"] = ticket_id
         state.classification["alerta"] = alerta
+        state.classification["categoria_propuesta"] = categoria_propuesta
+        state.classification["requiere_revision"] = requiere_revision
 
     finally:
         await conn.close()

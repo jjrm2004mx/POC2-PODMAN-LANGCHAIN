@@ -29,6 +29,8 @@ class ProcessResponse(BaseModel):
     run_id: str
     dominio: Optional[str] = None
     categoria: Optional[str] = None
+    categoria_propuesta: Optional[str] = None
+    requiere_revision: bool = False
     prioridad: Optional[str] = None
     confianza: Optional[float] = None
     alerta: Optional[str] = None
@@ -116,6 +118,8 @@ async def process_ticket(request: ProcessRequest):
         run_id=run_id,
         dominio=classification.get("dominio"),
         categoria=classification.get("categoria"),
+        categoria_propuesta=classification.get("categoria_propuesta"),
+        requiere_revision=classification.get("requiere_revision", False),
         prioridad=classification.get("prioridad"),
         confianza=classification.get("confianza"),
         alerta=classification.get("alerta"),
