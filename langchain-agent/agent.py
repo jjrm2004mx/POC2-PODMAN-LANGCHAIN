@@ -92,7 +92,7 @@ class ClasificacionSchema(BaseModel):
             raise ValueError(f"confianza {v} DEBE estar entre 0.0 y 1.0")
         return v
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def aplicar_fuzzy(cls, values):
         dominio = values.get("dominio")
         categoria = values.get("categoria")
