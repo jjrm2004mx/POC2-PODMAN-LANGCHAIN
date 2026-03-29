@@ -30,20 +30,33 @@ class ClasificacionSchema(BaseModel):
 
     @validator("dominio")
     def dominio_valido(cls, v):
+        if not v or not isinstance(v, str):
+            raise ValueError("dominio NO PUEDE estar vacío")
+        v = v.strip()
         if v not in AGENT_DOMAINS:
             raise ValueError(f"dominio '{v}' no está en {AGENT_DOMAINS}")
         return v
 
+    @validator("categoria")
+    def categoria_valida(cls, v):
+        if not v or len(str(v).strip()) < 3:
+            raise ValueError(f"categoria DEBE tener al menos 3 caracteres, recibido: '{v}'")
+        return v.strip()
+
     @validator("prioridad")
     def prioridad_valida(cls, v):
-        if v not in ["alta", "media", "baja"]:
-            raise ValueError(f"prioridad '{v}' debe ser: alta | media | baja")
+        if not v or v not in ["alta", "media", "baja"]:
+            raise ValueError(f"prioridad '{v}' DEBE ser: alta | media | baja")
         return v
 
     @validator("confianza")
     def confianza_valida(cls, v):
-        if not 0.0 <= v <= 1.0:
-            raise ValueError(f"confianza {v} debe estar entre 0.0 y 1.0")
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"confianza NO es numérica: {v}")
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(f"confianza {v} DEBE estar entre 0.0 y 1.0")
         return v
 
 class AgentState(BaseModel):
@@ -60,20 +73,40 @@ class AgentState(BaseModel):
 
 def build_system_prompt() -> str:
     dominios_str = " | ".join(AGENT_DOMAINS)
-    return f"""Eres un clasificador de tickets de soporte para un área de Shared Services.
-Tu única tarea es analizar el texto del ticket y clasificarlo.
+    return f"""CLASIFICADOR DE TICKETS SHARED SERVICES
+================================================================
+INSTRUCCIONES CRÍTICAS:
+1. SOLO RESPONDE CON JSON VÁLIDO
+2. SIN EXPLICACIONES, SIN MARKDOWN, SIN BACKTICKS
+3. FILA 1: El JSON completo
+4. NADA MÁS DESPUÉS
 
-Reglas estrictas:
-- Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.
-- El campo "dominio" DEBE ser exactamente uno de: {dominios_str}
-- El campo "prioridad" DEBE ser exactamente uno de: alta | media | baja
-- El campo "categoria" describe el tipo específico dentro del dominio (libre)
-- El campo "confianza" es un número entre 0.0 y 1.0
+DOMINIOS VÁLIDOS (elige UNO):
+- IT
+- cliente
+- operaciones
+- otro
 
-Ejemplo de respuesta correcta:
-{{"dominio": "IT", "categoria": "incidente", "prioridad": "alta", "confianza": 0.95}}
+PRIORIDADES VÁLIDAS (elige UNA):
+- alta
+- media
+- baja
 
-Responde SOLO con el JSON, nada más."""
+CAMPOS REQUERIDOS:
+{{"dominio": "IT", "categoria": "descripción corta", "prioridad": "alta", "confianza": 0.95}}
+
+EJEMPLO CORRECTO:
+{{"dominio": "operaciones", "categoria": "costos", "prioridad": "media", "confianza": 0.85}}
+
+REGLAS:
+✓ "dominio" DEBE ser: {dominios_str}
+✓ "prioridad" DEBE ser: alta, media o baja
+✓ "categoria" es texto libre, NUNCA vacío (mínimo 3 caracteres)
+✓ "confianza" es NÚMERO entre 0.0 y 1.0
+
+FORMATO FINAL OBLIGATORIO:
+{{"dominio":"...", "categoria":"...", "prioridad":"...", "confianza":X.XX}}
+================================================================"""
 
 async def classify_node(state: AgentState) -> AgentState:
     try:
@@ -89,26 +122,48 @@ async def classify_node(state: AgentState) -> AgentState:
             response.raise_for_status()
 
         data = response.json()
-        raw = data.get("response", "")
+        raw = data.get("response", "").strip()
 
         # Capturar campo cached de langchain-api
         state.cached = data.get("cached", False)
 
-        raw = raw.strip()
+        # ─ LIMPIEZA ROBUSTA DE MARKDOWN Y BASURA ───────────────────────
+        # 1. Remover backticks con "json"
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-
+                raw = raw[4:].strip()
+        
+        # 2. Buscar primer { válido y último }
+        idx_start = raw.find("{")
+        idx_end = raw.rfind("}")
+        
+        if idx_start >= 0 and idx_end > idx_start:
+            raw = raw[idx_start:idx_end+1].strip()
+        
+        # 3. Intentar parse JSON
         state.classification = json.loads(raw)
+        
+        # 4. Validar que tenga al menos los 4 campos
+        required = {"dominio", "categoria", "prioridad", "confianza"}
+        if not required.issubset(state.classification.keys()):
+            missing = required - set(state.classification.keys())
+            raise ValueError(f"Campos faltantes: {missing}")
 
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         state.classification = None
-        state.error = f"JSON inválido del LLM: {raw[:300]}"
+        state.error = f"JSON inválido del LLM (línea {e.lineno}): {raw[:200]}"
+        print(f"[DEBUG classify_node] JSONDecodeError: {state.error}", flush=True)
+        
+    except ValueError as e:
+        state.classification = None
+        state.error = f"Validación JSON falló: {str(e)}"
+        print(f"[DEBUG classify_node] ValueError: {state.error}", flush=True)
+        
     except Exception as e:
         state.classification = None
         state.error = f"Error en classify_node: {str(e)}"
+        print(f"[DEBUG classify_node] Exception: {state.error}", flush=True)
 
     state.iterations += 1
     return state
@@ -131,14 +186,20 @@ async def validate_node(state: AgentState) -> AgentState:
 async def save_node(state: AgentState) -> AgentState:
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        prioridad = state.classification["prioridad"]
+        dominio = state.classification["dominio"]
         categoria = state.classification["categoria"]
+        prioridad = state.classification["prioridad"]
+        confianza = state.classification["confianza"]
 
-        alerta = (
-            f"URGENTE: ticket de {categoria} con prioridad alta"
-            if prioridad == "alta"
-            else f"Ticket de {categoria} registrado con prioridad {prioridad}"
-        )
+        # Detectar si es fallback (confianza 0.0 + dominio "otro")
+        is_fallback = dominio == "otro" and confianza == 0.0
+        
+        if is_fallback:
+            alerta = f"⚠️ FALLBACK: Sin clasificación válida tras {state.iterations} intentos. Revisar manualmente."
+        elif prioridad == "alta":
+            alerta = f"🚨 URGENTE: {categoria} con prioridad alta"
+        else:
+            alerta = f"📌 Ticket de {categoria} registrado con prioridad {prioridad}"
 
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
@@ -146,10 +207,10 @@ async def save_node(state: AgentState) -> AgentState:
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING id""",
             state.texto,
-            state.classification["dominio"],
-            state.classification["categoria"],
-            state.classification["prioridad"],
-            float(state.classification["confianza"]),
+            dominio,
+            categoria,
+            prioridad,
+            float(confianza),
             state.origen,
             state.remitente,
             alerta,
@@ -164,10 +225,29 @@ async def save_node(state: AgentState) -> AgentState:
     return state
 
 def should_retry(state: AgentState) -> str:
+    """
+    Lógica de reintentos con FALLBACK:
+    - Si clasificación válida → guardar
+    - Si alcanzó MAX_ITERATIONS sin validación → FALLBACK a "otro"
+    - Si aún hay intentos → reintentar classify
+    """
     if state.validated:
         return "save"
+    
+    # 🚨 FALLBACK: Si se agotaron intentos, asignar "otro"
     if state.iterations >= state.max_iterations:
-        return END
+        state.classification = {
+            "dominio": "otro",
+            "categoria": "sin clasificar - máximo de reintentos",
+            "prioridad": "baja",
+            "confianza": 0.0,  # Confianza mínima indica fallback
+        }
+        state.validated = True
+        state.error = f"FALLBACK activado después de {state.iterations} intentos"
+        print(f"[FALLBACK] Asignado dominio='otro' tras {state.iterations} intentos fallidos", flush=True)
+        return "save"
+    
+    # Reintentar clasificación
     return "classify"
 
 workflow = StateGraph(AgentState)
