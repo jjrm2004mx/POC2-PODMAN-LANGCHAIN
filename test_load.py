@@ -1,21 +1,42 @@
 # =============================================================================
 # test_load.py — Prueba de carga concurrente para shared-services-classifier
-# Ejecutar en VS Code: python test_load.py
+# Uso: python test_load.py [N] [CONCURRENCY] [MAX_CATS]
+#   N           — msgs por categoría    (default: 2)
+#   CONCURRENCY — requests simultáneos  (default: 5)
+#   MAX_CATS    — máx categorías, 0=todas (default: 0)
+#
+# Ejemplos:
+#   python test_load.py 1 1      →  27 requests (1 × 27 cats, secuencial)
+#   python test_load.py 1 1 4    →   4 requests (smoke test)
+#   python test_load.py 2 5 10   →  20 requests (2 × 10 cats, 5 concurrentes)
 # Requiere: pip install httpx
 # =============================================================================
 
 import asyncio
 import httpx
 import json
+import sys
 import time
 from datetime import datetime
 
-# ── Configuración ─────────────────────────────────────────────────────────────
-AGENT_URL      = "http://localhost:8001/process"
-PROVIDER       = "ollama"       # ollama | openai | anthropic | gemini
-CONCURRENCY    = 5              # N requests simultáneos
-MESSAGES_PER_CATEGORY = 2      # Mensajes por categoría (2 × ~34 cats = ~68 total)
-TIMEOUT        = 300.0          # segundos por request (ollama es lento)
+# ── Parámetros por línea de comandos ──────────────────────────────────────────
+# Uso: python test_load.py [N] [CONCURRENCY] [MAX_CATS]
+#   N           — msgs por categoría   (default: 2)
+#   CONCURRENCY — requests simultáneos (default: 5)
+#   MAX_CATS    — máx categorías a testear, 0=todas (default: 0)
+#
+# Ejemplos:
+#   python test_load.py 1 1      →  27 requests (1 × 27 cats, secuencial)
+#   python test_load.py 1 1 4    →   4 requests (smoke test)
+#   python test_load.py 2 5 10   →  20 requests (2 × 10 cats, 5 concurrentes)
+MESSAGES_PER_CATEGORY = int(sys.argv[1]) if len(sys.argv) > 1 else 2
+CONCURRENCY           = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+MAX_CATS              = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+
+# ── Configuración fija ────────────────────────────────────────────────────────
+AGENT_URL = "http://localhost:8001/process"
+PROVIDER  = "ollama"   # ollama | openai | anthropic | gemini
+TIMEOUT   = 300.0      # segundos por request (ollama es lento; OpenAI ~10s)
 
 # ── Mensajes por categoría ────────────────────────────────────────────────────
 MESSAGES = {
@@ -411,12 +432,20 @@ async def main():
     print(f"  Provider  : {PROVIDER}")
     print(f"  Concurrency: {CONCURRENCY}")
     print(f"  Mensajes/cat: {MESSAGES_PER_CATEGORY}")
-    total = sum(min(MESSAGES_PER_CATEGORY, len(msgs)) for msgs in MESSAGES.values())
+    print(f"  Categorías  : {MAX_CATS if MAX_CATS > 0 else 'todas'} / {len(MESSAGES)}")
+    categorias = list(MESSAGES.items())
+    if MAX_CATS > 0:
+        categorias = categorias[:MAX_CATS]
+    total = sum(min(MESSAGES_PER_CATEGORY, len(msgs)) for _, msgs in categorias)
     print(f"  Total msgs: {total}")
     print(f"{'='*70}\n")
 
+    categorias = list(MESSAGES.items())
+    if MAX_CATS > 0:
+        categorias = categorias[:MAX_CATS]
+
     tasks_data = []
-    for categoria, mensajes in MESSAGES.items():
+    for categoria, mensajes in categorias:
         for i, texto in enumerate(mensajes[:MESSAGES_PER_CATEGORY]):
             tasks_data.append((f"{categoria}[{i+1}]", categoria, texto))
 
