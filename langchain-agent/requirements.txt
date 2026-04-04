@@ -23,5 +23,8 @@ httpx
 # Cache y estado
 redis
 
+# Almacenamiento de objetos
+minio
+
 # Observabilidad
 prometheus-fastapi-instrumentator

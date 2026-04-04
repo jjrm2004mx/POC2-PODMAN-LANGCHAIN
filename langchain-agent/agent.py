@@ -104,7 +104,8 @@ class ClasificacionSchema(BaseModel):
         return values
 
 class AgentState(BaseModel):
-    texto: str
+    asunto: str
+    cuerpo: str
     origen: str = "webhook"
     remitente: Optional[str] = None
     provider: str = "ollama"
@@ -154,11 +155,12 @@ FORMATO FINAL OBLIGATORIO:
 
 async def classify_node(state: AgentState) -> AgentState:
     try:
+        prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {state.cuerpo}"
         async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutos para llama3:latest
             response = await client.post(
                 f"{LANGCHAIN_API_URL}/ask",
                 json={
-                    "prompt": state.texto,
+                    "prompt": prompt,
                     "system": build_system_prompt(),
                     "provider": state.provider,
                 }
@@ -255,11 +257,12 @@ async def save_node(state: AgentState) -> AgentState:
 
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
-               (texto, dominio, categoria, prioridad, confianza, origen, remitente, alerta,
+               (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente, alerta,
                 categoria_propuesta, requiere_revision)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                RETURNING id""",
-            state.texto,
+            state.cuerpo,
+            state.asunto,
             dominio,
             categoria,
             prioridad,

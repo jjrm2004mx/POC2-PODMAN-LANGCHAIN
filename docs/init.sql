@@ -34,3 +34,14 @@ CREATE TABLE IF NOT EXISTS ss_agent_runs (
 -- Migración para despliegues existentes (idempotente)
 ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS categoria_propuesta VARCHAR(255);
 ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS requiere_revision   BOOLEAN DEFAULT FALSE;
+ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS asunto              VARCHAR(500);
+
+-- Tabla de metadatos de adjuntos (el contenido se almacenará en MinIO a futuro)
+CREATE TABLE IF NOT EXISTS ss_adjuntos (
+    id          SERIAL PRIMARY KEY,
+    ticket_id   INT REFERENCES ss_tickets(id) ON DELETE CASCADE,
+    nombre      VARCHAR(255) NOT NULL,
+    tipo_mime   VARCHAR(100),
+    storage_key VARCHAR(500),          -- Path en MinIO (uso futuro)
+    created_at  TIMESTAMP DEFAULT NOW()
+);

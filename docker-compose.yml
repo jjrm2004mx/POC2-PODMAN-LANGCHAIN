@@ -50,6 +50,10 @@ services:
       - CATEGORIES_CLIENTE=${CATEGORIES_CLIENTE}
       - CATEGORIES_OPERACIONES=${CATEGORIES_OPERACIONES}
       - CATEGORIES_OTRO=${CATEGORIES_OTRO}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
+      - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:
@@ -59,6 +63,8 @@ services:
         condition: service_healthy
       langchain-api:
         condition: service_started
+      minio:
+        condition: service_healthy
     networks:
       - ai-network
     restart: unless-stopped
@@ -284,6 +290,34 @@ services:
 # RED INTERNA
 # Red explícita para garantizar resolución de nombres estable entre reinicios
 # =============================================================================
+  # ---------------------------------------------------------------------------
+  # ALMACENAMIENTO DE OBJETOS — MinIO
+  # Guarda archivos adjuntos de correos (Excel, PDF, etc.)
+  # API: http://localhost:9000 | Consola: http://localhost:9001
+  # Credenciales: minioadmin / minioadmin123
+  # ---------------------------------------------------------------------------
+  minio:
+    image: docker.io/minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ai-network
+    restart: unless-stopped
+
 networks:
   ai-network:
     driver: bridge
