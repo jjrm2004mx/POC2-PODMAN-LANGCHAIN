@@ -53,11 +53,13 @@ class JobAcceptedResponse(BaseModel):
 
 class JobStatusResponse(BaseModel):
     job_id: str
-    status: str                          # en_proceso | completado | error
+    status: str                          # en_proceso | completado | error | ignorado
     asunto: Optional[str] = None
     remitente: Optional[str] = None
     conversation_id: Optional[str] = None
     ticket_id: Optional[int] = None
+    ticket_id_existente: Optional[int] = None  # Solo en status=ignorado
+    motivo: Optional[str] = None               # Solo en status=ignorado
     external_ticket_id: Optional[str] = None   # UUID en SS-TICKET-SYSTEM
     dominio: Optional[str] = None
     categoria: Optional[str] = None
