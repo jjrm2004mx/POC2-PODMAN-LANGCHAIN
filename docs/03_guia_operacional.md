@@ -39,20 +39,35 @@
 
 ## 2. Ciclo de vida del stack
 
-### Primera vez — crear la red compartida (una sola vez)
+### Primera vez — preparación inicial (solo una vez)
 
 ```bash
-# Red externa requerida por el stack. Crear antes del primer up.
-# No afecta pruebas locales — queda vacía hasta integrar SS-TICKET-SYSTEM.
+# 1. Crear la red compartida con SS-TICKET-SYSTEM
 podman network create shared-network
+
+# 2. Dar permisos de ejecución al script de arranque
+chmod +x ~/podman/ai-stack/start.sh
 ```
 
 ### Levantar todo
 
+> **Si SS-TICKET-SYSTEM corre en Windows (Podman Desktop):**
+> Usar `start.sh` en lugar de `podman-compose up -d`.
+> El script detecta automáticamente la IP del host Windows y actualiza
+> el `.env` antes de levantar — funciona igual en casa y en la oficina.
+
 ```bash
+# Arranque recomendado (detecta IP de Windows automáticamente)
+~/podman/ai-stack/start.sh
+```
+
+```bash
+# Arranque directo (solo si SS-TICKET no está en Windows o la IP es fija)
 cd ~/podman/ai-stack
 podman-compose up -d
+```
 
+```bash
 # Verificar que arrancaron todos los contenedores
 podman ps
 ```
@@ -1038,7 +1053,7 @@ free -h | grep Mem
 
 ```bash
 # ── Stack ────────────────────────────────────────────────────────
-cd ~/podman/ai-stack && podman-compose up -d         # Levantar
+~/podman/ai-stack/start.sh                           # Levantar (detecta IP Windows automáticamente)
 cd ~/podman/ai-stack && podman-compose down          # Apagar
 cd ~/podman/ai-stack && podman-compose restart X     # Reiniciar servicio X
 podman ps                                            # Estado
