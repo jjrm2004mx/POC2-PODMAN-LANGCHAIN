@@ -24,7 +24,7 @@ fi
 echo "[start.sh] IP del host Windows: $WSL_HOST_IP"
 
 # Actualizar SS_TICKET_API_URL en .env con la IP actual
-sed -i "s|SS_TICKET_API_URL=http://[0-9.]*:8080|SS_TICKET_API_URL=http://$WSL_HOST_IP:8080|" "$ENV_FILE"
+sed -i "s|^SS_TICKET_API_URL=.*|SS_TICKET_API_URL=http://$WSL_HOST_IP:8080/api/v1|" "$ENV_FILE"
 
 echo "[start.sh] SS_TICKET_API_URL actualizado: http://$WSL_HOST_IP:8080/api/v1"
 
