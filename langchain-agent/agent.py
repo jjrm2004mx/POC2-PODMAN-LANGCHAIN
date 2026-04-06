@@ -368,6 +368,7 @@ async def save_node(state: AgentState) -> AgentState:
                     "requesterEmail":      state.remitente or "",
                     "externalId":          str(ticket_id),
                 },
+                files={"anexos": ("", b"", "application/octet-stream")},
             )
             resp.raise_for_status()
             ss_data = resp.json()
