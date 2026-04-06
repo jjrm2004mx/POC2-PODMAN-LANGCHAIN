@@ -352,24 +352,27 @@ async def save_node(state: AgentState) -> AgentState:
 
     # ─── PASO 2: crear ticket en SS-TICKET-SYSTEM ─────────────────────────────
     try:
+        params_ss = {
+            "title":               state.asunto,
+            "description":         state.cuerpo,
+            "asunto":              state.asunto,
+            "cuerpo":              state.cuerpo,
+            "classificationName":  dominio,
+            "categoryName":        categoria,
+            "priority":            prioridad.upper(),
+            "requiereValidacion":  requiere_revision,
+            "requesterEmail":      state.remitente or "",
+            "externalId":          str(ticket_id),
+        }
+        print(f"[SS-TICKET REQUEST] URL={SS_TICKET_API_URL}/internal/tickets params={params_ss}", flush=True)
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{SS_TICKET_API_URL}/internal/tickets",
                 headers={"X-Api-Key": SS_TICKET_API_KEY},
-                params={
-                    "title":               state.asunto,
-                    "description":         state.cuerpo,
-                    "asunto":              state.asunto,
-                    "cuerpo":              state.cuerpo,
-                    "classificationName":  dominio,
-                    "categoryName":        categoria,
-                    "priority":            prioridad.upper(),
-                    "requiereValidacion":  requiere_revision,
-                    "requesterEmail":      state.remitente or "",
-                    "externalId":          str(ticket_id),
-                },
+                params=params_ss,
                 files={"anexos": ("", b"", "application/octet-stream")},
             )
+            print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
             ss_data = resp.json()
             external_ticket_id = ss_data.get("ticketId")
