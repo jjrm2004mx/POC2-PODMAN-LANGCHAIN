@@ -173,7 +173,8 @@ curl -s -X POST http://localhost:8001/process \
   -d '{
     "asunto": "Servidor de producción no responde",
     "cuerpo": "El servidor de producción no responde desde las 9am. Los usuarios no pueden acceder al ERP.",
-    "remitente": "soporte@empresa.com"
+    "remitente": "soporte@empresa.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0001"
   }'
 # Respuesta: {"job_id": "abc-123-...", "status": "en_proceso"}
 
@@ -189,7 +190,8 @@ curl -s -X POST http://localhost:8001/process \
   -d '{
     "asunto": "Cargo duplicado en factura de marzo",
     "cuerpo": "Mi factura del mes pasado tiene un cargo duplicado de $500. Por favor revisar.",
-    "remitente": "cliente@externo.com"
+    "remitente": "cliente@externo.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0002"
   }'
 ```
 
@@ -201,11 +203,12 @@ curl -s -X POST http://localhost:8001/process \
   -d '{
     "asunto": "Error en cierre contable mensual",
     "cuerpo": "El proceso de cierre contable mensual no terminó. Hay errores en el batch de las 2am.",
-    "remitente": "contabilidad@empresa.com"
+    "remitente": "contabilidad@empresa.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0003"
   }'
 ```
 
-### Con adjuntos y conversation_id (flujo completo Power Automate)
+### Con adjuntos (flujo completo Power Automate)
 
 ```bash
 curl -s -X POST http://localhost:8001/process \
@@ -214,7 +217,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Error en sistema de nómina",
     "cuerpo": "Desde esta mañana el sistema no permite procesar pagos.",
     "remitente": "juan.perez@empresa.com",
-    "conversation_id": "AAMkAGI2TI5OGEtZWMx...",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0004",
     "adjuntos": [
       {"nombre": "captura_error.png", "tipo": "image/png"},
       {"nombre": "reporte.xlsx", "tipo": "application/vnd.ms-excel"}
@@ -232,6 +235,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Sistema de reportes sin actualizar",
     "cuerpo": "El sistema de reportes de BI lleva 2 horas sin actualizar.",
     "remitente": "operaciones@empresa.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0005",
     "provider": "openai"
   }'
 ```
@@ -245,7 +249,8 @@ JOB_ID=$(curl -s -X POST http://localhost:8001/process \
   -d '{
     "asunto": "Solicitud vacaciones agosto",
     "cuerpo": "Solicito 5 días de vacaciones del 1 al 5 de agosto.",
-    "remitente": "rrhh@empresa.com"
+    "remitente": "rrhh@empresa.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0006"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
 
 echo "Job ID: $JOB_ID"
@@ -373,26 +378,53 @@ podman exec -it postgres psql -U admin -d ai
 # Para salir: \q
 ```
 
+### Entender los IDs
+
+| ID | Origen | Tabla / campo |
+|----|--------|---------------|
+| `job_id` | Generado por el agente en cada POST `/process` | `ss_agent_runs.run_id` |
+| `ticket_id` | Generado por Postgres (SERIAL) | `ss_tickets.id` |
+| `conversation_id` | Viene de Outlook vía Power Automate | `ss_tickets.conversation_id` |
+| `external_ticket_id` | UUID devuelto por SS-TICKET-SYSTEM | `ss_tickets.external_ticket_id` |
+
 ### Consultas de operación
 
 ```bash
 # Ver últimos 10 tickets clasificados
 podman exec -it postgres psql -U admin -d ai -c "
-SELECT id, dominio, categoria, categoria_propuesta, requiere_revision, prioridad, confianza, origen, created_at
+SELECT id, asunto, dominio, categoria, prioridad, confianza, remitente, created_at
 FROM ss_tickets
 ORDER BY created_at DESC
 LIMIT 10;"
 
-# Tickets que requieren revisión de categoría (categoría nueva no reconocida)
+# Buscar un ticket por job_id (el que devuelve POST /process)
 podman exec -it postgres psql -U admin -d ai -c "
-SELECT id, dominio, categoria, categoria_propuesta, prioridad, created_at
+SELECT t.id AS ticket_id, t.asunto, t.dominio, t.categoria, t.prioridad,
+       r.run_id AS job_id, r.iterations_used, r.validated, r.duracion_ms
+FROM ss_tickets t
+JOIN ss_agent_runs r ON r.ticket_id = t.id
+WHERE r.run_id = 'PEGA-AQUI-EL-JOB-ID';"
+
+# Vista completa: tickets con su ejecución de agente
+podman exec -it postgres psql -U admin -d ai -c "
+SELECT t.id AS ticket_id, t.asunto, t.dominio, t.categoria, t.prioridad,
+       t.confianza, t.requiere_revision, t.conversation_id,
+       r.run_id AS job_id, r.iterations_used, r.validated, r.duracion_ms
+FROM ss_tickets t
+JOIN ss_agent_runs r ON r.ticket_id = t.id
+ORDER BY t.id DESC
+LIMIT 10;"
+
+# Tickets que requieren revisión manual
+podman exec -it postgres psql -U admin -d ai -c "
+SELECT id, asunto, dominio, categoria, categoria_propuesta, prioridad, created_at
 FROM ss_tickets
 WHERE requiere_revision = true
 ORDER BY created_at DESC;"
 
 # Tickets de alta prioridad del día
 podman exec -it postgres psql -U admin -d ai -c "
-SELECT id, dominio, categoria, texto, remitente, created_at
+SELECT id, asunto, dominio, categoria, remitente, created_at
 FROM ss_tickets
 WHERE prioridad = 'alta'
   AND created_at >= CURRENT_DATE
@@ -406,11 +438,11 @@ WHERE created_at >= CURRENT_DATE
 GROUP BY dominio, prioridad
 ORDER BY dominio, prioridad;"
 
-# Ver ejecuciones del agente (trazabilidad)
+# Ver ejecuciones recientes del agente (trazabilidad)
 podman exec -it postgres psql -U admin -d ai -c "
-SELECT run_id, iterations_used, validated, provider_usado, duracion_ms, created_at
+SELECT run_id AS job_id, ticket_id, iterations_used, validated, provider_usado, duracion_ms
 FROM ss_agent_runs
-ORDER BY created_at DESC
+ORDER BY id DESC
 LIMIT 10;"
 
 # Performance del agente: distribución de iteraciones
@@ -684,6 +716,37 @@ podman exec -it redis redis-cli get "el_hash_md5_aqui"
 # Ver TTL restante de una key
 podman exec -it redis redis-cli ttl "el_hash_md5_aqui"
 # Resultado en segundos (máximo 3600 = 1 hora)
+```
+
+### Ver jobs del agente (en_proceso, completado, error)
+
+Los jobs se almacenan en Redis con el prefijo `job:` y TTL de 24h.
+La BD solo se escribe cuando el job llega a `completado` — los jobs intermedios solo existen aquí.
+
+```bash
+# Listar todos los job_ids activos
+podman exec -it redis redis-cli keys "job:*"
+
+# Ver estado de un job específico (el job_id que devolvió POST /process)
+podman exec -it redis redis-cli get "job:PEGA-AQUI-EL-JOB-ID"
+
+# Ver todos los jobs con su estado de forma legible
+podman exec -it redis redis-cli keys "job:*" | \
+  xargs -I{} sh -c 'echo "---"; echo "Key: {}"; podman exec redis redis-cli get "{}"'
+```
+
+Ejemplo de respuesta de un job completado:
+```json
+{
+  "status": "completado",
+  "asunto": "Error en sistema de nómina",
+  "dominio": "IT",
+  "categoria": "errores sistema",
+  "prioridad": "alta",
+  "confianza": 0.95,
+  "ticket_id": 2,
+  "validated": true
+}
 ```
 
 ---
@@ -997,8 +1060,11 @@ curl -s http://localhost:8001/status/JOB_ID | python3 -m json.tool
 # ── Base de datos ─────────────────────────────────────────────────
 podman exec -it postgres psql -U admin -d ai         # Conectar a PG
 # Ver últimos tickets:
-podman exec postgres psql -U admin -d ai \
-  -c "SELECT dominio,categoria,requiere_revision,prioridad,created_at FROM ss_tickets ORDER BY created_at DESC LIMIT 5;"
+podman exec -it postgres psql -U admin -d ai \
+  -c "SELECT id, asunto, dominio, categoria, prioridad, created_at FROM ss_tickets ORDER BY id DESC LIMIT 5;"
+# Buscar por job_id:
+podman exec -it postgres psql -U admin -d ai \
+  -c "SELECT t.id, t.asunto, t.dominio, r.run_id AS job_id FROM ss_tickets t JOIN ss_agent_runs r ON r.ticket_id = t.id ORDER BY t.id DESC LIMIT 5;"
 
 # ── Redis ─────────────────────────────────────────────────────────
 podman exec redis redis-cli ping                     # Test

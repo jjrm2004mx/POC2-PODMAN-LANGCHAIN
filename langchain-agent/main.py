@@ -56,6 +56,7 @@ class JobStatusResponse(BaseModel):
     status: str                          # en_proceso | completado | error
     asunto: Optional[str] = None
     remitente: Optional[str] = None
+    conversation_id: Optional[str] = None
     ticket_id: Optional[int] = None
     external_ticket_id: Optional[str] = None   # UUID en SS-TICKET-SYSTEM
     dominio: Optional[str] = None
@@ -68,6 +69,8 @@ class JobStatusResponse(BaseModel):
     iterations_used: Optional[int] = None
     validated: Optional[bool] = None
     cached: Optional[bool] = None
+    provider: Optional[str] = None
+    duracion_ms: Optional[int] = None
     error: Optional[str] = None
 
 # =============================================================================
@@ -175,6 +178,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             "status": "completado",
             "asunto": request.asunto,
             "remitente": request.remitente,
+            "conversation_id": request.conversation_id,
             "ticket_id": ticket_id,
             "external_ticket_id": classification.get("external_ticket_id") if classification else None,
             "dominio": classification.get("dominio") if classification else None,
@@ -187,6 +191,8 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             "iterations_used": iterations_used,
             "validated": validated,
             "cached": cached,
+            "provider": initial_state.provider,
+            "duracion_ms": duracion_ms,
             "error": last_error,
         }
 
