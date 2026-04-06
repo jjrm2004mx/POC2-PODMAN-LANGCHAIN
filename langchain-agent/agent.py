@@ -45,6 +45,8 @@ def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     # Categoría desconocida → marcar para revisión
     return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
+SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL", "http://ss-ticket-backend:8080/api/v1")
+SS_TICKET_API_KEY = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
 DATABASE_URL = (
     f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
     f":{os.getenv('POSTGRES_PASSWORD', 'admin')}"
@@ -108,6 +110,7 @@ class AgentState(BaseModel):
     cuerpo: str
     origen: str = "webhook"
     remitente: Optional[str] = None
+    conversation_id: Optional[str] = None
     provider: str = "ollama"
     iterations: int = 0
     max_iterations: int = MAX_ITERATIONS
@@ -234,32 +237,32 @@ async def validate_node(state: AgentState) -> AgentState:
     return state
 
 async def save_node(state: AgentState) -> AgentState:
+    dominio             = state.classification["dominio"]
+    categoria           = state.classification["categoria"]
+    prioridad           = state.classification["prioridad"]
+    confianza           = state.classification["confianza"]
+    categoria_propuesta = state.classification.get("categoria_propuesta")
+    requiere_revision   = state.classification.get("requiere_revision", False)
+
+    is_fallback = dominio == "otro" and confianza == 0.0
+
+    if is_fallback:
+        alerta = f"⚠️ FALLBACK: Sin clasificación válida tras {state.iterations} intentos. Revisar manualmente."
+    elif requiere_revision:
+        alerta = f"🔍 REVISIÓN: categoría '{categoria}' no reconocida, requiere validación manual"
+    elif prioridad == "alta":
+        alerta = f"🚨 URGENTE: {categoria} con prioridad alta"
+    else:
+        alerta = f"📌 Ticket de {categoria} registrado con prioridad {prioridad}"
+
+    # ─── PASO 1: guardar en nuestra BD ────────────────────────────────────────
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        dominio             = state.classification["dominio"]
-        categoria           = state.classification["categoria"]
-        prioridad           = state.classification["prioridad"]
-        confianza           = state.classification["confianza"]
-        categoria_propuesta = state.classification.get("categoria_propuesta")
-        requiere_revision   = state.classification.get("requiere_revision", False)
-
-        # Detectar si es fallback (confianza 0.0 + dominio "otro")
-        is_fallback = dominio == "otro" and confianza == 0.0
-
-        if is_fallback:
-            alerta = f"⚠️ FALLBACK: Sin clasificación válida tras {state.iterations} intentos. Revisar manualmente."
-        elif requiere_revision:
-            alerta = f"🔍 REVISIÓN: categoría '{categoria}' no reconocida, requiere validación manual"
-        elif prioridad == "alta":
-            alerta = f"🚨 URGENTE: {categoria} con prioridad alta"
-        else:
-            alerta = f"📌 Ticket de {categoria} registrado con prioridad {prioridad}"
-
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
                (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente, alerta,
-                categoria_propuesta, requiere_revision)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                categoria_propuesta, requiere_revision, conversation_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                RETURNING id""",
             state.cuerpo,
             state.asunto,
@@ -272,15 +275,63 @@ async def save_node(state: AgentState) -> AgentState:
             alerta,
             categoria_propuesta,
             requiere_revision,
+            state.conversation_id,
         )
-
-        state.classification["ticket_id"] = ticket_id
-        state.classification["alerta"] = alerta
-        state.classification["categoria_propuesta"] = categoria_propuesta
-        state.classification["requiere_revision"] = requiere_revision
-
     finally:
         await conn.close()
+
+    state.classification["ticket_id"]           = ticket_id
+    state.classification["alerta"]              = alerta
+    state.classification["categoria_propuesta"] = categoria_propuesta
+    state.classification["requiere_revision"]   = requiere_revision
+
+    # ─── PASO 2: crear ticket en SS-TICKET-SYSTEM ─────────────────────────────
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{SS_TICKET_API_URL}/internal/tickets",
+                headers={"X-Api-Key": SS_TICKET_API_KEY},
+                params={
+                    "title":               state.asunto,
+                    "description":         state.cuerpo,
+                    "asunto":              state.asunto,
+                    "cuerpo":              state.cuerpo,
+                    "classificationName":  dominio,
+                    "categoryName":        categoria,
+                    "priority":            prioridad.upper(),
+                    "requiereValidacion":  str(requiere_revision).lower(),
+                    "requesterEmail":      state.remitente or "",
+                    "externalId":          str(ticket_id),
+                },
+            )
+            resp.raise_for_status()
+            ss_data = resp.json()
+            external_ticket_id = ss_data.get("ticketId")
+            print(
+                f"[SS-TICKET] ticketId={external_ticket_id} "
+                f"result={ss_data.get('result')} "
+                f"classificationResolved={ss_data.get('classificationResolved')} "
+                f"categoryResolved={ss_data.get('categoryResolved')}",
+                flush=True,
+            )
+
+        # ─── PASO 3: actualizar nuestra BD con el ID externo ──────────────────
+        conn = await asyncpg.connect(DATABASE_URL)
+        try:
+            await conn.execute(
+                "UPDATE ss_tickets SET external_ticket_id = $1 WHERE id = $2",
+                external_ticket_id,
+                ticket_id,
+            )
+        finally:
+            await conn.close()
+
+        state.classification["external_ticket_id"] = external_ticket_id
+
+    except Exception as e:
+        # El ticket ya está en nuestra BD — el error externo no es bloqueante
+        print(f"[WARN SS-TICKET] No se pudo crear en SS-TICKET-SYSTEM: {e}", flush=True)
+        state.classification["external_ticket_id"] = None
 
     return state
 

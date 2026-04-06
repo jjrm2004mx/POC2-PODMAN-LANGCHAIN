@@ -42,6 +42,7 @@ class ProcessRequest(BaseModel):
     asunto: str
     cuerpo: str
     remitente: Optional[str] = None
+    conversation_id: Optional[str] = None   # ID del hilo Outlook — deduplicación
     adjuntos: Optional[List[AdjuntoInfo]] = []
     provider: Optional[str] = None
     max_iterations: Optional[int] = None
@@ -56,6 +57,7 @@ class JobStatusResponse(BaseModel):
     asunto: Optional[str] = None
     remitente: Optional[str] = None
     ticket_id: Optional[int] = None
+    external_ticket_id: Optional[str] = None   # UUID en SS-TICKET-SYSTEM
     dominio: Optional[str] = None
     categoria: Optional[str] = None
     categoria_propuesta: Optional[str] = None
@@ -80,12 +82,45 @@ async def process_email_job(job_id: str, request: ProcessRequest):
     start_time = time.time()
     run_id = job_id
 
+    # ─── DEDUPLICACIÓN: ignorar si ya existe un ticket para este hilo ─────────
+    if request.conversation_id:
+        try:
+            conn = await asyncpg.connect(DATABASE_URL)
+            try:
+                ticket_existente = await conn.fetchval(
+                    "SELECT id FROM ss_tickets WHERE conversation_id = $1",
+                    request.conversation_id,
+                )
+            finally:
+                await conn.close()
+
+            if ticket_existente:
+                print(
+                    f"[DEDUP] conversation_id={request.conversation_id} "
+                    f"ya tiene ticket_id={ticket_existente} — ignorando",
+                    flush=True,
+                )
+                await redis_client.setex(
+                    f"job:{job_id}",
+                    JOB_TTL_SECONDS,
+                    json.dumps({
+                        "status": "ignorado",
+                        "motivo": "respuesta a cadena existente",
+                        "ticket_id_existente": ticket_existente,
+                        "conversation_id": request.conversation_id,
+                    }),
+                )
+                return
+        except Exception as e:
+            print(f"[WARN DEDUP] Error verificando conversation_id: {e}", flush=True)
+
     try:
         initial_state = AgentState(
             asunto=request.asunto,
             cuerpo=request.cuerpo,
             origen="webhook",
             remitente=request.remitente,
+            conversation_id=request.conversation_id,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
         )
@@ -141,6 +176,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             "asunto": request.asunto,
             "remitente": request.remitente,
             "ticket_id": ticket_id,
+            "external_ticket_id": classification.get("external_ticket_id") if classification else None,
             "dominio": classification.get("dominio") if classification else None,
             "categoria": classification.get("categoria") if classification else None,
             "categoria_propuesta": classification.get("categoria_propuesta") if classification else None,

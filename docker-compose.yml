@@ -54,6 +54,8 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
+      - SS_TICKET_API_URL=${SS_TICKET_API_URL:-http://ss-ticket-backend:8080/api/v1}
+      - SS_TICKET_API_KEY=${SS_TICKET_API_KEY:-change-this-secret-key-in-production}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:
@@ -67,6 +69,7 @@ services:
         condition: service_healthy
     networks:
       - ai-network
+      - shared-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -321,3 +324,8 @@ services:
 networks:
   ai-network:
     driver: bridge
+  # Red compartida con SS-TICKET-SYSTEM
+  # Crear una vez en Podman antes de levantar ambos stacks:
+  #   podman network create shared-network
+  shared-network:
+    external: true
