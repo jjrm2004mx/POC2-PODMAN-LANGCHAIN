@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS ss_tickets (
     id                  SERIAL PRIMARY KEY,
     texto               TEXT NOT NULL,
+    asunto              VARCHAR(500),
     dominio             VARCHAR(50),
     categoria           VARCHAR(255),
     categoria_propuesta VARCHAR(255),
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS ss_tickets (
     origen              VARCHAR(50),
     remitente           VARCHAR(255),
     alerta              TEXT,
+    external_ticket_id  VARCHAR(36),
+    conversation_id     VARCHAR(200),
     created_at          TIMESTAMP DEFAULT NOW()
 );
 
@@ -30,13 +33,6 @@ CREATE TABLE IF NOT EXISTS ss_agent_runs (
     duracion_ms     INT,
     created_at      TIMESTAMP DEFAULT NOW()
 );
-
--- Migración para despliegues existentes (idempotente)
-ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS categoria_propuesta  VARCHAR(255);
-ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS requiere_revision    BOOLEAN DEFAULT FALSE;
-ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS asunto               VARCHAR(500);
-ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS external_ticket_id   VARCHAR(36);
-ALTER TABLE ss_tickets ADD COLUMN IF NOT EXISTS conversation_id      VARCHAR(200);
 
 CREATE INDEX IF NOT EXISTS idx_tickets_conversation
 ON ss_tickets(conversation_id)

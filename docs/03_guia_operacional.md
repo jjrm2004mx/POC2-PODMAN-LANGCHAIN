@@ -39,6 +39,14 @@
 
 ## 2. Ciclo de vida del stack
 
+### Primera vez — crear la red compartida (una sola vez)
+
+```bash
+# Red externa requerida por el stack. Crear antes del primer up.
+# No afecta pruebas locales — queda vacía hasta integrar SS-TICKET-SYSTEM.
+podman network create shared-network
+```
+
 ### Levantar todo
 
 ```bash
@@ -140,15 +148,37 @@ Abrir en el navegador de Windows:
 
 ## 4. Probar el clasificador
 
+> **Flujo asíncrono — dos pasos obligatorios:**
+> 1. `POST /process` → devuelve un `job_id` inmediatamente (HTTP 202)
+> 2. `GET /status/{job_id}` → consultar el resultado (esperar ~20-30s con Ollama)
+
+### Campos del request
+
+| Campo | Requerido | Descripción |
+|-------|-----------|-------------|
+| `asunto` | Sí | Asunto del correo |
+| `cuerpo` | Sí | Cuerpo del correo |
+| `remitente` | No | Email del remitente (Power Automate lo envía siempre) |
+| `conversation_id` | No | ID del hilo Outlook — evita clasificar el mismo hilo dos veces |
+| `adjuntos` | No | Lista de `{nombre, tipo}` con metadatos de archivos adjuntos |
+| `provider` | No | Override del LLM: `ollama` \| `openai` \| `anthropic` \| `gemini` |
+| `max_iterations` | No | Override del máximo de reintentos del agente |
+
 ### Ticket de IT (incidente de servidor)
 
 ```bash
+# Paso 1 — enviar
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "El servidor de producción no responde desde las 9am. Los usuarios no pueden acceder al ERP.",
-    "origen": "webhook"
-  }' | python3 -m json.tool
+    "asunto": "Servidor de producción no responde",
+    "cuerpo": "El servidor de producción no responde desde las 9am. Los usuarios no pueden acceder al ERP.",
+    "remitente": "soporte@empresa.com"
+  }'
+# Respuesta: {"job_id": "abc-123-...", "status": "en_proceso"}
+
+# Paso 2 — consultar resultado (reemplazar el job_id)
+curl -s http://localhost:8001/status/PEGA-AQUI-EL-JOB-ID | python3 -m json.tool
 ```
 
 ### Ticket de cliente (factura)
@@ -157,9 +187,10 @@ curl -s -X POST http://localhost:8001/process \
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "Mi factura del mes pasado tiene un cargo duplicado de $500. Por favor revisar.",
-    "origen": "webhook"
-  }' | python3 -m json.tool
+    "asunto": "Cargo duplicado en factura de marzo",
+    "cuerpo": "Mi factura del mes pasado tiene un cargo duplicado de $500. Por favor revisar.",
+    "remitente": "cliente@externo.com"
+  }'
 ```
 
 ### Ticket de operaciones (batch)
@@ -168,21 +199,27 @@ curl -s -X POST http://localhost:8001/process \
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "El proceso de cierre contable mensual no terminó. Hay errores en el batch de las 2am.",
-    "origen": "webhook"
-  }' | python3 -m json.tool
+    "asunto": "Error en cierre contable mensual",
+    "cuerpo": "El proceso de cierre contable mensual no terminó. Hay errores en el batch de las 2am.",
+    "remitente": "contabilidad@empresa.com"
+  }'
 ```
 
-### Ticket vía Gmail (con remitente)
+### Con adjuntos y conversation_id (flujo completo Power Automate)
 
 ```bash
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "Necesito acceso urgente al sistema de nómina. Mi usuario fue bloqueado.",
-    "origen": "gmail",
-    "remitente": "empleado@empresa.com"
-  }' | python3 -m json.tool
+    "asunto": "Error en sistema de nómina",
+    "cuerpo": "Desde esta mañana el sistema no permite procesar pagos.",
+    "remitente": "juan.perez@empresa.com",
+    "conversation_id": "AAMkAGI2TI5OGEtZWMx...",
+    "adjuntos": [
+      {"nombre": "captura_error.png", "tipo": "image/png"},
+      {"nombre": "reporte.xlsx", "tipo": "application/vnd.ms-excel"}
+    ]
+  }'
 ```
 
 ### Probar con provider diferente
@@ -192,27 +229,65 @@ curl -s -X POST http://localhost:8001/process \
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "El sistema de reportes de BI lleva 2 horas sin actualizar.",
-    "origen": "webhook",
+    "asunto": "Sistema de reportes sin actualizar",
+    "cuerpo": "El sistema de reportes de BI lleva 2 horas sin actualizar.",
+    "remitente": "operaciones@empresa.com",
     "provider": "openai"
-  }' | python3 -m json.tool
+  }'
 ```
 
-### Verificar cache Redis (segunda llamada debe mostrar cached: true)
+### Script end-to-end completo
+
+```bash
+# 1. Enviar y capturar job_id
+JOB_ID=$(curl -s -X POST http://localhost:8001/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "asunto": "Solicitud vacaciones agosto",
+    "cuerpo": "Solicito 5 días de vacaciones del 1 al 5 de agosto.",
+    "remitente": "rrhh@empresa.com"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+
+echo "Job ID: $JOB_ID"
+
+# 2. Esperar procesamiento y consultar resultado
+sleep 25
+curl -s http://localhost:8001/status/$JOB_ID | python3 -m json.tool
+```
+
+Respuesta esperada cuando está listo:
+```json
+{
+    "status": "completado",
+    "dominio": "operaciones",
+    "categoria": "vacaciones",
+    "prioridad": "baja",
+    "confianza": 0.92,
+    "ticket_id": 1,
+    "validated": true,
+    "cached": false
+}
+```
+
+Estados posibles del `status`:
+- `en_proceso` — el agente aún está trabajando, reintentar en unos segundos
+- `completado` — clasificación exitosa
+- `error` — ver campo `error` con el detalle
+- `ignorado` — correo duplicado detectado por `conversation_id`
+
+### Verificar cache Redis (segunda llamada idéntica)
 
 ```bash
 # Primera llamada — clasifica con Ollama (~25s)
-time curl -s -X POST http://localhost:8001/process \
+curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"texto": "Texto de prueba para cache", "origen": "webhook"}' \
-  | python3 -m json.tool
+  -d '{"asunto": "Test cache", "cuerpo": "Texto de prueba para verificar cache Redis"}'
 
-# Segunda llamada — responde desde Redis (<100ms)
-time curl -s -X POST http://localhost:8001/process \
+# Segunda llamada con el mismo asunto+cuerpo — responde desde cache
+# En el resultado final: "cached": true
+curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"texto": "Texto de prueba para cache", "origen": "webhook"}' \
-  | python3 -m json.tool
-# Debe mostrar: "cached": true
+  -d '{"asunto": "Test cache", "cuerpo": "Texto de prueba para verificar cache Redis"}'
 ```
 
 ---
@@ -377,8 +452,9 @@ podman exec -i postgres psql -U admin -d ai \
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "Tu ticket aquí",
-    "origen": "webhook",
+    "asunto": "Asunto del correo",
+    "cuerpo": "Cuerpo del correo aquí",
+    "remitente": "usuario@empresa.com",
     "provider": "openai"
   }'
 # Providers: ollama | openai | anthropic | gemini
@@ -438,9 +514,11 @@ podman-compose restart langchain-agent
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
   -d '{
-    "texto": "Necesito solicitar 5 días de vacaciones para la siguiente quincena.",
-    "origen": "webhook"
-  }' | python3 -m json.tool
+    "asunto": "Solicitud de vacaciones",
+    "cuerpo": "Necesito solicitar 5 días de vacaciones para la siguiente quincena.",
+    "remitente": "empleado@empresa.com"
+  }'
+# Consultar el job_id devuelto en GET /status/{job_id}
 # El agente debe clasificar como dominio=RRHH
 ```
 
@@ -476,8 +554,7 @@ podman logs -f langchain-agent
 # 5. Probar el cambio
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"texto": "Prueba del cambio", "origen": "webhook"}' \
-  | python3 -m json.tool
+  -d '{"asunto": "Prueba del cambio", "cuerpo": "Verificación tras rebuild del contenedor."}'
 ```
 
 ### Flujo para cambios en la API (langchain-api)
@@ -869,11 +946,14 @@ curl -s http://localhost:8001/health | grep -q "ok" && echo "Agente: OK" || echo
 # ✅ 3. API responde
 curl -s http://localhost:8000/health | grep -q "ok" && echo "API: OK" || echo "API: ❌"
 
-# ✅ 4. Clasificación funciona
-curl -s -X POST http://localhost:8001/process \
+# ✅ 4. Clasificación funciona (flujo dos pasos)
+JOB=$(curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"texto": "Test de verificación diaria", "origen": "webhook"}' \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print('Clasificador: OK - dominio=' + d.get('dominio','ERROR'))"
+  -d '{"asunto": "Test diario", "cuerpo": "Verificación de salud del clasificador"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+sleep 25
+curl -s http://localhost:8001/status/$JOB \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('Clasificador: ' + ('OK - dominio=' + d.get('dominio','?') if d.get('status')=='completado' else '❌ ' + d.get('status','?')))"
 
 # ✅ 5. PostgreSQL accesible
 podman exec postgres psql -U admin -d ai -c "SELECT COUNT(*) FROM ss_tickets;" -t \
@@ -907,9 +987,12 @@ podman logs --tail 100 langchain-agent               # Últimas 100 líneas
 podman-compose logs -f                               # Todos los servicios
 
 # ── Clasificador ──────────────────────────────────────────────────
+# Paso 1 — enviar (devuelve job_id)
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"texto": "TEXTO", "origen": "webhook"}' | python3 -m json.tool
+  -d '{"asunto": "ASUNTO", "cuerpo": "CUERPO", "remitente": "user@empresa.com"}'
+# Paso 2 — consultar resultado
+curl -s http://localhost:8001/status/JOB_ID | python3 -m json.tool
 
 # ── Base de datos ─────────────────────────────────────────────────
 podman exec -it postgres psql -U admin -d ai         # Conectar a PG
