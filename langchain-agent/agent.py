@@ -15,6 +15,7 @@ from typing import Optional
 AGENT_DOMAINS = os.getenv("AGENT_DOMAINS", "IT,cliente,operaciones,otro").split(",")
 MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))
 FUZZY_THRESHOLD = int(os.getenv("FUZZY_THRESHOLD", "80"))
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.7"))
 
 def _get_categorias(dominio: str) -> list:
     raw = os.getenv(f"CATEGORIES_{dominio.upper()}", "")
@@ -118,9 +119,23 @@ class AgentState(BaseModel):
     validated: bool = False
     cached: bool = False
     error: Optional[str] = None
+    retry_feedback: Optional[str] = None  # Retroalimentación al LLM en reintentos
 
 def build_system_prompt() -> str:
     dominios_str = " | ".join(AGENT_DOMAINS)
+
+    # Construir sección de categorías válidas por dominio
+    cats_lines = []
+    for dominio in AGENT_DOMAINS:
+        cats = _get_categorias(dominio)
+        if cats:
+            cats_lines.append(f"  {dominio}: {', '.join(cats)}")
+    cats_section = (
+        "\nCATEGORÍAS VÁLIDAS POR DOMINIO (usa EXACTAMENTE una de estas):\n" + "\n".join(cats_lines)
+        if cats_lines else
+        "\n(Sin lista de categorías configurada — usa texto libre descriptivo)"
+    )
+
     return f"""CLASIFICADOR DE TICKETS SHARED SERVICES
 ================================================================
 INSTRUCCIONES CRÍTICAS:
@@ -139,17 +154,18 @@ PRIORIDADES VÁLIDAS (elige UNA):
 - alta
 - media
 - baja
+{cats_section}
 
 CAMPOS REQUERIDOS:
 {{"dominio": "IT", "categoria": "descripción corta", "prioridad": "alta", "confianza": 0.95}}
 
 EJEMPLO CORRECTO:
-{{"dominio": "operaciones", "categoria": "costos", "prioridad": "media", "confianza": 0.85}}
+{{"dominio": "operaciones", "categoria": "logistica", "prioridad": "media", "confianza": 0.85}}
 
 REGLAS:
 ✓ "dominio" DEBE ser: {dominios_str}
 ✓ "prioridad" DEBE ser: alta, media o baja
-✓ "categoria" es texto libre, NUNCA vacío (mínimo 3 caracteres)
+✓ "categoria" DEBE ser una de las categorías válidas listadas arriba
 ✓ "confianza" es NÚMERO entre 0.0 y 1.0
 
 FORMATO FINAL OBLIGATORIO:
@@ -159,6 +175,8 @@ FORMATO FINAL OBLIGATORIO:
 async def classify_node(state: AgentState) -> AgentState:
     try:
         prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {state.cuerpo}"
+        if state.retry_feedback:
+            prompt += f"\n\n⚠️ INTENTO ANTERIOR RECHAZADO: {state.retry_feedback}\nDebes corregir y responder SOLO con JSON válido usando las categorías listadas."
         async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutos para llama3:latest
             response = await client.post(
                 f"{LANGCHAIN_API_URL}/ask",
@@ -337,29 +355,58 @@ async def save_node(state: AgentState) -> AgentState:
 
 def should_retry(state: AgentState) -> str:
     """
-    Lógica de reintentos con FALLBACK:
-    - Si clasificación válida → guardar
-    - Si alcanzó MAX_ITERATIONS sin validación → FALLBACK a "otro"
-    - Si aún hay intentos → reintentar classify
+    Lógica de reintentos:
+    - Categoría no reconocida (requiere_revision=True) → reintentar con feedback
+    - Confianza menor a MIN_CONFIDENCE                 → reintentar con feedback
+    - Ambas condiciones OK                             → guardar
+    - Agotó MAX_ITERATIONS                             → FALLBACK dominio=otro
     """
-    if state.validated:
-        return "save"
-    
-    # 🚨 FALLBACK: Si se agotaron intentos, asignar "otro"
+    # ─── FALLBACK: iteraciones agotadas ──────────────────────────────────────
     if state.iterations >= state.max_iterations:
         state.classification = {
             "dominio": "otro",
             "categoria": "sin clasificar - máximo de reintentos",
             "prioridad": "baja",
-            "confianza": 0.0,  # Confianza mínima indica fallback
+            "confianza": 0.0,
         }
         state.validated = True
         state.error = f"FALLBACK activado después de {state.iterations} intentos"
-        print(f"[FALLBACK] Asignado dominio='otro' tras {state.iterations} intentos fallidos", flush=True)
+        print(f"[FALLBACK] dominio='otro' tras {state.iterations} intentos", flush=True)
         return "save"
-    
-    # Reintentar clasificación
-    return "classify"
+
+    # ─── Sin clasificación válida → reintentar ────────────────────────────────
+    if not state.validated or not state.classification:
+        return "classify"
+
+    dominio   = state.classification.get("dominio", "")
+    categoria = state.classification.get("categoria", "")
+    confianza = float(state.classification.get("confianza", 0.0))
+    requiere_revision = state.classification.get("requiere_revision", False)
+
+    motivos = []
+
+    if requiere_revision:
+        cats     = _get_categorias(dominio)
+        cats_str = ", ".join(cats) if cats else "ninguna configurada"
+        motivos.append(
+            f"categoría '{categoria}' no reconocida para dominio '{dominio}'. "
+            f"Categorías válidas: {cats_str}"
+        )
+
+    if confianza < MIN_CONFIDENCE:
+        motivos.append(
+            f"confianza {confianza:.2f} es menor al mínimo requerido {MIN_CONFIDENCE:.2f}. "
+            f"Analiza mejor el ticket y asigna una categoría más precisa"
+        )
+
+    if motivos:
+        state.retry_feedback = " | ".join(motivos)
+        state.validated = False
+        state.classification = None
+        print(f"[RETRY {state.iterations}/{state.max_iterations}] {state.retry_feedback}", flush=True)
+        return "classify"
+
+    return "save"
 
 workflow = StateGraph(AgentState)
 workflow.add_node("classify", classify_node)
