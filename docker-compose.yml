@@ -57,6 +57,7 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
       - SS_TICKET_API_URL=${SS_TICKET_API_URL:-http://ss-ticket-backend:8080/api/v1}
       - SS_TICKET_API_KEY=${SS_TICKET_API_KEY:-change-this-secret-key-in-production}
+      - SS_TICKET_CATALOGO_ENABLED=${SS_TICKET_CATALOGO_ENABLED:-true}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:

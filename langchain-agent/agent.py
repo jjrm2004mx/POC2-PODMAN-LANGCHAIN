@@ -17,9 +17,55 @@ MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))
 FUZZY_THRESHOLD = int(os.getenv("FUZZY_THRESHOLD", "80"))
 MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.7"))
 
+# =============================================================================
+# CATÁLOGO REMOTO — cargado desde SS-TICKET-SYSTEM al arrancar
+# Si el servicio no está disponible, se usa el fallback del .env
+# _catalogo[dominio] = [categoria1, categoria2, ...]
+# =============================================================================
+_catalogo: dict = {}
+
+def _cargar_catalogo_remoto() -> bool:
+    """
+    Consulta GET /internal/classifications/active en SS-TICKET-SYSTEM.
+    Carga el catálogo en _catalogo si responde correctamente.
+    Timeout corto (3s) — nunca bloquea el arranque.
+    Retorna True si cargó correctamente, False si usó fallback.
+    """
+    global _catalogo, AGENT_DOMAINS
+    url = f"{os.getenv('SS_TICKET_API_URL', 'http://ss-ticket-backend:8080/api/v1')}/internal/classifications/active"
+    api_key = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
+    try:
+        import httpx as _httpx
+        resp = _httpx.get(url, headers={"X-Api-Key": api_key}, timeout=3.0)
+        resp.raise_for_status()
+        data = resp.json()
+        catalogo_nuevo = {}
+        for item in data:
+            nombre = item.get("name", "").strip()
+            cats   = [c["name"].strip().lower() for c in item.get("categories", []) if c.get("name")]
+            if nombre:
+                catalogo_nuevo[nombre] = cats
+        if catalogo_nuevo:
+            _catalogo = catalogo_nuevo
+            AGENT_DOMAINS = list(_catalogo.keys())
+            print(f"[CATALOGO] Cargado desde SS-TICKET-SYSTEM: {list(_catalogo.keys())}", flush=True)
+            return True
+    except Exception as e:
+        print(f"[CATALOGO] No disponible, usando .env como fallback: {e}", flush=True)
+    return False
+
 def _get_categorias(dominio: str) -> list:
+    # Primero busca en el catálogo remoto, luego en .env
+    if _catalogo:
+        return _catalogo.get(dominio, [])
     raw = os.getenv(f"CATEGORIES_{dominio.upper()}", "")
     return [c.strip().lower() for c in raw.split(",") if c.strip()] if raw else []
+
+# Intentar cargar catálogo al importar el módulo (arranque del agente)
+if os.getenv("SS_TICKET_CATALOGO_ENABLED", "true").lower() == "true":
+    _cargar_catalogo_remoto()
+else:
+    print("[CATALOGO] Deshabilitado — usando .env como fuente de catálogo", flush=True)
 
 def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     """Returns (categoria_final, categoria_propuesta, requiere_revision)"""
@@ -228,9 +274,10 @@ async def classify_node(state: AgentState) -> AgentState:
         print(f"[DEBUG classify_node] ValueError: {state.error}", flush=True)
         
     except Exception as e:
+        import traceback
         state.classification = None
         state.error = f"Error en classify_node: {str(e)}"
-        print(f"[DEBUG classify_node] Exception: {state.error}", flush=True)
+        print(f"[DEBUG classify_node] Exception: {state.error}\n{traceback.format_exc()}", flush=True)
 
     state.iterations += 1
     return state
@@ -317,7 +364,7 @@ async def save_node(state: AgentState) -> AgentState:
                     "classificationName":  dominio,
                     "categoryName":        categoria,
                     "priority":            prioridad.upper(),
-                    "requiereValidacion":  str(requiere_revision).lower(),
+                    "requiereValidacion":  requiere_revision,
                     "requesterEmail":      state.remitente or "",
                     "externalId":          str(ticket_id),
                 },
