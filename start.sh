@@ -28,8 +28,9 @@ sed -i "s|SS_TICKET_API_URL=http://[0-9.]*:8080|SS_TICKET_API_URL=http://$WSL_HO
 
 echo "[start.sh] SS_TICKET_API_URL actualizado: http://$WSL_HOST_IP:8080/api/v1"
 
-# Levantar el stack
+# Levantar el stack forzando recreación para que tome los nuevos env vars
 cd "$STACK_DIR"
+podman-compose down
 podman-compose up -d
 
 echo "[start.sh] Stack levantado. Verificando contenedores..."
