@@ -310,6 +310,21 @@ async def validate_node(state: AgentState) -> AgentState:
     return state
 
 async def save_node(state: AgentState) -> AgentState:
+    # FALLBACK: should_retry delega aquí la mutación del estado porque
+    # LangGraph no propaga cambios de estado hechos en conditional edges.
+    if state.iterations >= state.max_iterations and (
+        not state.classification
+        or float(state.classification.get("confianza", 1.0)) < MIN_CONFIDENCE
+    ):
+        print(f"[FALLBACK] dominio='otro' aplicado en save_node tras {state.iterations} intentos", flush=True)
+        state.classification = {
+            "dominio":   "otro",
+            "categoria": "sin clasificar",
+            "prioridad": "baja",
+            "confianza": 0.0,
+        }
+        state.error = f"FALLBACK: sin clasificación válida tras {state.iterations} intentos"
+
     dominio             = state.classification["dominio"]
     categoria           = state.classification["categoria"]
     prioridad           = state.classification["prioridad"]
@@ -394,12 +409,22 @@ async def save_node(state: AgentState) -> AgentState:
             flush=True,
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{SS_TICKET_API_URL}/internal/tickets",
-                headers={"X-Api-Key": SS_TICKET_API_KEY},
-                data=data_ss,
-                **({"files": files_ss} if files_ss else {}),
-            )
+            if files_ss:
+                # Multipart: campos de formulario + archivos en un solo files=
+                # (data= + files= en httpx async no combina multipart correctamente)
+                multipart = [(k, str(v)) for k, v in data_ss.items()]
+                multipart.extend(files_ss)
+                resp = await client.post(
+                    f"{SS_TICKET_API_URL}/internal/tickets",
+                    headers={"X-Api-Key": SS_TICKET_API_KEY},
+                    files=multipart,
+                )
+            else:
+                resp = await client.post(
+                    f"{SS_TICKET_API_URL}/internal/tickets",
+                    headers={"X-Api-Key": SS_TICKET_API_KEY},
+                    data=data_ss,
+                )
             print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
             ss_data = resp.json()
@@ -441,16 +466,10 @@ def should_retry(state: AgentState) -> str:
     - Agotó MAX_ITERATIONS                             → FALLBACK dominio=otro
     """
     # ─── FALLBACK: iteraciones agotadas ──────────────────────────────────────
+    # La mutación del state se hace en save_node porque LangGraph no propaga
+    # cambios de estado realizados dentro de conditional edges.
     if state.iterations >= state.max_iterations:
-        state.classification = {
-            "dominio": "otro",
-            "categoria": "sin clasificar - máximo de reintentos",
-            "prioridad": "baja",
-            "confianza": 0.0,
-        }
-        state.validated = True
-        state.error = f"FALLBACK activado después de {state.iterations} intentos"
-        print(f"[FALLBACK] dominio='otro' tras {state.iterations} intentos", flush=True)
+        print(f"[FALLBACK] Máximo de iteraciones alcanzado ({state.iterations}), enviando a save", flush=True)
         return "save"
 
     # ─── Sin clasificación válida → reintentar ────────────────────────────────
