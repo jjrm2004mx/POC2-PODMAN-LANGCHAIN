@@ -319,7 +319,7 @@ async def save_node(state: AgentState) -> AgentState:
         print(f"[FALLBACK] dominio='otro' aplicado en save_node tras {state.iterations} intentos", flush=True)
         state.classification = {
             "dominio":   "otro",
-            "categoria": "sin clasificar",
+            "categoria": "general",
             "prioridad": "baja",
             "confianza": 0.0,
         }
@@ -409,22 +409,12 @@ async def save_node(state: AgentState) -> AgentState:
             flush=True,
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            if files_ss:
-                # Multipart: campos de formulario + archivos en un solo files=
-                # (data= + files= en httpx async no combina multipart correctamente)
-                multipart = [(k, str(v)) for k, v in data_ss.items()]
-                multipart.extend(files_ss)
-                resp = await client.post(
-                    f"{SS_TICKET_API_URL}/internal/tickets",
-                    headers={"X-Api-Key": SS_TICKET_API_KEY},
-                    files=multipart,
-                )
-            else:
-                resp = await client.post(
-                    f"{SS_TICKET_API_URL}/internal/tickets",
-                    headers={"X-Api-Key": SS_TICKET_API_KEY},
-                    data=data_ss,
-                )
+            resp = await client.post(
+                f"{SS_TICKET_API_URL}/internal/tickets",
+                headers={"X-Api-Key": SS_TICKET_API_KEY},
+                data=data_ss,
+                **({"files": files_ss} if files_ss else {}),
+            )
             print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
             ss_data = resp.json()
