@@ -158,6 +158,7 @@ class AgentState(BaseModel):
     cuerpo: str
     origen: str = "webhook"
     remitente: Optional[str] = None
+    nombre_remitente: Optional[str] = None
     conversation_id: Optional[str] = None
     provider: str = "ollama"
     iterations: int = 0
@@ -348,9 +349,9 @@ async def save_node(state: AgentState) -> AgentState:
     try:
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
-               (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente, alerta,
-                categoria_propuesta, requiere_revision, conversation_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
+                nombre_remitente, alerta, categoria_propuesta, requiere_revision, conversation_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                RETURNING id""",
             state.cuerpo,
             state.asunto,
@@ -360,6 +361,7 @@ async def save_node(state: AgentState) -> AgentState:
             float(confianza),
             state.origen,
             state.remitente,
+            state.nombre_remitente,
             alerta,
             categoria_propuesta,
             requiere_revision,
@@ -385,6 +387,7 @@ async def save_node(state: AgentState) -> AgentState:
             "priority":            prioridad.upper(),
             "requiereValidacion":  "true" if requiere_revision else "false",
             "requesterEmail":      state.remitente or "",
+            "requesterName":       state.nombre_remitente or "",
             "externalId":          str(ticket_id),
         }
 

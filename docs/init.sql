@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS ss_tickets (
     confianza           FLOAT,
     origen              VARCHAR(50),
     remitente           VARCHAR(255),
+    nombre_remitente    VARCHAR(255),
     alerta              TEXT,
     external_ticket_id  VARCHAR(36),
     conversation_id     VARCHAR(200),

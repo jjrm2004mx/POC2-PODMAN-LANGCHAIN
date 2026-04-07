@@ -43,6 +43,7 @@ class ProcessRequest(BaseModel):
     asunto: str
     cuerpo: str
     remitente: Optional[str] = None
+    nombre_remitente: Optional[str] = None
     conversation_id: Optional[str] = None   # ID del hilo Outlook — deduplicación
     adjuntos: Optional[List[AdjuntoInfo]] = []
     provider: Optional[str] = None
@@ -57,6 +58,7 @@ class JobStatusResponse(BaseModel):
     status: str                          # en_proceso | completado | error | ignorado
     asunto: Optional[str] = None
     remitente: Optional[str] = None
+    nombre_remitente: Optional[str] = None
     conversation_id: Optional[str] = None
     ticket_id: Optional[int] = None
     ticket_id_existente: Optional[int] = None  # Solo en status=ignorado
@@ -126,6 +128,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             cuerpo=request.cuerpo,
             origen="webhook",
             remitente=request.remitente,
+            nombre_remitente=request.nombre_remitente,
             conversation_id=request.conversation_id,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
@@ -182,6 +185,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             "status": "completado",
             "asunto": request.asunto,
             "remitente": request.remitente,
+            "nombre_remitente": request.nombre_remitente,
             "conversation_id": request.conversation_id,
             "ticket_id": ticket_id,
             "external_ticket_id": classification.get("external_ticket_id") if classification else None,
@@ -206,6 +210,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             "status": "error",
             "asunto": request.asunto,
             "remitente": request.remitente,
+            "nombre_remitente": request.nombre_remitente,
             "error": str(e),
         }
 
