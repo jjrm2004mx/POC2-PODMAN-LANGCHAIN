@@ -37,6 +37,7 @@ JOB_TTL_SECONDS = 86400  # 24 horas
 class AdjuntoInfo(BaseModel):
     nombre: str
     tipo: Optional[str] = None          # MIME type (e.g. application/vnd.ms-excel)
+    contenido_b64: Optional[str] = None # Contenido del archivo en base64
 
 class ProcessRequest(BaseModel):
     asunto: str
@@ -128,6 +129,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             conversation_id=request.conversation_id,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
+            adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
         )
 
         final_state = await agent.ainvoke(initial_state)

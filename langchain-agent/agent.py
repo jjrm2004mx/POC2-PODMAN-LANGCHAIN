@@ -5,12 +5,13 @@
 
 import os
 import json
+import base64
 import httpx
 import asyncpg
 from difflib import SequenceMatcher
 from langgraph.graph import StateGraph, END
 from pydantic import BaseModel, validator, root_validator
-from typing import Optional
+from typing import Optional, List
 
 AGENT_DOMAINS = os.getenv("AGENT_DOMAINS", "IT,cliente,operaciones,otro").split(",")
 MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))
@@ -162,6 +163,7 @@ class AgentState(BaseModel):
     iterations: int = 0
     max_iterations: int = MAX_ITERATIONS
     classification: Optional[dict] = None
+    adjuntos: Optional[List[dict]] = []   # [{nombre, tipo, contenido_b64}, ...]
     validated: bool = False
     cached: bool = False
     error: Optional[str] = None
@@ -191,10 +193,7 @@ INSTRUCCIONES CRÍTICAS:
 4. NADA MÁS DESPUÉS
 
 DOMINIOS VÁLIDOS (elige UNO):
-- IT
-- cliente
-- operaciones
-- otro
+{chr(10).join(f"- {d}" for d in AGENT_DOMAINS)}
 
 PRIORIDADES VÁLIDAS (elige UNA):
 - alta
@@ -203,10 +202,10 @@ PRIORIDADES VÁLIDAS (elige UNA):
 {cats_section}
 
 CAMPOS REQUERIDOS:
-{{"dominio": "IT", "categoria": "descripción corta", "prioridad": "alta", "confianza": 0.95}}
+{{"dominio": "{AGENT_DOMAINS[0]}", "categoria": "descripción corta", "prioridad": "alta", "confianza": 0.95}}
 
 EJEMPLO CORRECTO:
-{{"dominio": "operaciones", "categoria": "logistica", "prioridad": "media", "confianza": 0.85}}
+{{"dominio": "{AGENT_DOMAINS[1] if len(AGENT_DOMAINS) > 1 else AGENT_DOMAINS[0]}", "categoria": "soporte", "prioridad": "media", "confianza": 0.85}}
 
 REGLAS:
 ✓ "dominio" DEBE ser: {dominios_str}
@@ -219,6 +218,15 @@ FORMATO FINAL OBLIGATORIO:
 ================================================================"""
 
 async def classify_node(state: AgentState) -> AgentState:
+    # Si el catálogo no cargó al arranque, reintentarlo ahora que SS-TICKET
+    # ya debería estar disponible. Sin catálogo, el LLM usaría nombres del
+    # .env que SS-TICKET no reconoce → tickets creados como otro/general.
+    if not _catalogo and os.getenv("SS_TICKET_CATALOGO_ENABLED", "true").lower() == "true":
+        if _cargar_catalogo_remoto():
+            print("[CATALOGO] Recargado exitosamente en classify_node", flush=True)
+        else:
+            print("[CATALOGO] Sigue sin disponible en classify_node — usando .env fallback", flush=True)
+
     try:
         prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {state.cuerpo}"
         if state.retry_feedback:
@@ -352,7 +360,7 @@ async def save_node(state: AgentState) -> AgentState:
 
     # ─── PASO 2: crear ticket en SS-TICKET-SYSTEM ─────────────────────────────
     try:
-        params_ss = {
+        data_ss = {
             "title":               state.asunto,
             "description":         state.cuerpo,
             "asunto":              state.asunto,
@@ -360,17 +368,37 @@ async def save_node(state: AgentState) -> AgentState:
             "classificationName":  dominio,
             "categoryName":        categoria,
             "priority":            prioridad.upper(),
-            "requiereValidacion":  requiere_revision,
+            "requiereValidacion":  "true" if requiere_revision else "false",
             "requesterEmail":      state.remitente or "",
             "externalId":          str(ticket_id),
         }
-        print(f"[SS-TICKET REQUEST] URL={SS_TICKET_API_URL}/internal/tickets params={params_ss}", flush=True)
+
+        # Construir lista de archivos para multipart (uno por adjunto)
+        files_ss = []
+        for adj in (state.adjuntos or []):
+            nombre    = adj.get("nombre", "adjunto")
+            tipo      = adj.get("tipo") or "application/octet-stream"
+            b64       = adj.get("contenido_b64") or ""
+            try:
+                contenido = base64.b64decode(b64) if b64 else b""
+            except Exception:
+                contenido = b""
+            # TODO: eliminar cuando Power Automate envíe contenido_b64 real
+            if not contenido:
+                contenido = f"[ARCHIVO DE PRUEBA] {nombre}".encode()
+            files_ss.append(("anexos", (nombre, contenido, tipo)))
+
+        print(
+            f"[SS-TICKET REQUEST] URL={SS_TICKET_API_URL}/internal/tickets "
+            f"data={data_ss} adjuntos={len(files_ss)}",
+            flush=True,
+        )
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{SS_TICKET_API_URL}/internal/tickets",
                 headers={"X-Api-Key": SS_TICKET_API_KEY},
-                params=params_ss,
-                files={"anexos": ("", b"", "application/octet-stream")},
+                data=data_ss,
+                **({"files": files_ss} if files_ss else {}),
             )
             print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
