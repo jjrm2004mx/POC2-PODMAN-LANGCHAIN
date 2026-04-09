@@ -390,6 +390,7 @@ class AgentState(BaseModel):
     texto: str
     origen: str = "webhook"
     remitente: Optional[str] = None
+    nombre_remitente: Optional[str] = None
     provider: str = "ollama"
     iterations: int = 0
     max_iterations: int = MAX_ITERATIONS
@@ -472,8 +473,9 @@ async def save_node(state: AgentState) -> AgentState:
         # Insertar ticket
         ticket_id = await conn.fetchval(
             """INSERT INTO ss_tickets
-               (texto, dominio, categoria, prioridad, confianza, origen, remitente, alerta)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               (texto, dominio, categoria, prioridad, confianza, origen, remitente,
+                nombre_remitente, alerta)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                RETURNING id""",
             state.texto,
             state.classification["dominio"],
@@ -482,6 +484,7 @@ async def save_node(state: AgentState) -> AgentState:
             state.classification["confianza"],
             state.origen,
             state.remitente,
+            state.nombre_remitente,
             alerta,
         )
 
@@ -525,7 +528,8 @@ agent = workflow.compile()
 {
   "texto": "El servidor de producción no responde desde las 9am",
   "origen": "webhook",        // webhook | gmail | slack | email | manual
-  "remitente": null,          // Email del remitente (solo para origen=gmail)
+  "remitente": null,          // Email del remitente
+  "nombre_remitente": null,   // Nombre del remitente (Power Automate lo envía junto a remitente)
   "provider": "ollama",       // Opcional — default: AGENT_PROVIDER del .env
   "max_iterations": 5         // Opcional — default: AGENT_MAX_ITERATIONS del .env
 }
@@ -543,6 +547,7 @@ agent = workflow.compile()
   "texto_original": "El servidor de producción no responde desde las 9am",
   "origen": "webhook",
   "remitente": null,
+  "nombre_remitente": null,
   "iterations_used": 1,
   "cached": false,
   "validated": true
@@ -647,7 +652,8 @@ CREATE TABLE IF NOT EXISTS ss_tickets (
   prioridad           VARCHAR(10),           -- alta | media | baja
   confianza           FLOAT,                 -- 0.0 a 1.0 (certeza del LLM)
   origen              VARCHAR(50) DEFAULT 'webhook',  -- webhook | gmail | slack | email | manual
-  remitente           VARCHAR(255),          -- Email del remitente (solo para origen=gmail)
+  remitente           VARCHAR(255),          -- Email del remitente
+  nombre_remitente    VARCHAR(255),          -- Nombre del remitente (enviado por Power Automate)
   alerta              TEXT,                  -- Mensaje generado post-clasificación
   created_at          TIMESTAMP DEFAULT NOW()
 );

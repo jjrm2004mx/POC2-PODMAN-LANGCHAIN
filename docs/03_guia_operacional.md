@@ -174,6 +174,7 @@ Abrir en el navegador de Windows:
 | `asunto` | Sí | Asunto del correo |
 | `cuerpo` | Sí | Cuerpo del correo |
 | `remitente` | No | Email del remitente (Power Automate lo envía siempre) |
+| `nombre_remitente` | No | Nombre del remitente (Power Automate lo envía junto a `remitente`) |
 | `conversation_id` | No | ID del hilo Outlook — evita clasificar el mismo hilo dos veces |
 | `adjuntos` | No | Lista de `{nombre, tipo}` con metadatos de archivos adjuntos |
 | `provider` | No | Override del LLM: `ollama` \| `openai` \| `anthropic` \| `gemini` |
@@ -189,6 +190,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Servidor de producción no responde",
     "cuerpo": "El servidor de producción no responde desde las 9am. Los usuarios no pueden acceder al ERP.",
     "remitente": "soporte@empresa.com",
+    "nombre_remitente": "Soporte TI",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0001"
   }'
 # Respuesta: {"job_id": "abc-123-...", "status": "en_proceso"}
@@ -206,6 +208,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Cargo duplicado en factura de marzo",
     "cuerpo": "Mi factura del mes pasado tiene un cargo duplicado de $500. Por favor revisar.",
     "remitente": "cliente@externo.com",
+    "nombre_remitente": "Cliente Externo",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0002"
   }'
 ```
@@ -219,6 +222,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Error en cierre contable mensual",
     "cuerpo": "El proceso de cierre contable mensual no terminó. Hay errores en el batch de las 2am.",
     "remitente": "contabilidad@empresa.com",
+    "nombre_remitente": "Contabilidad",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0003"
   }'
 ```
@@ -232,6 +236,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Error en sistema de nómina",
     "cuerpo": "Desde esta mañana el sistema no permite procesar pagos.",
     "remitente": "juan.perez@empresa.com",
+    "nombre_remitente": "Juan Pérez",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0004",
     "adjuntos": [
       {"nombre": "captura_error.png", "tipo": "image/png"},
@@ -250,6 +255,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Sistema de reportes sin actualizar",
     "cuerpo": "El sistema de reportes de BI lleva 2 horas sin actualizar.",
     "remitente": "operaciones@empresa.com",
+    "nombre_remitente": "Operaciones BI",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0005",
     "provider": "openai"
   }'
@@ -265,6 +271,7 @@ JOB_ID=$(curl -s -X POST http://localhost:8001/process \
     "asunto": "Solicitud vacaciones agosto",
     "cuerpo": "Solicito 5 días de vacaciones del 1 al 5 de agosto.",
     "remitente": "rrhh@empresa.com",
+    "nombre_remitente": "RRHH",
     "conversation_id": "AAMkAGI2TI5OGEtZWMxIT0006"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
 
@@ -502,6 +509,7 @@ curl -s -X POST http://localhost:8001/process \
     "asunto": "Asunto del correo",
     "cuerpo": "Cuerpo del correo aquí",
     "remitente": "usuario@empresa.com",
+    "nombre_remitente": "Nombre Usuario",
     "provider": "openai"
   }'
 # Providers: ollama | openai | anthropic | gemini
@@ -563,7 +571,8 @@ curl -s -X POST http://localhost:8001/process \
   -d '{
     "asunto": "Solicitud de vacaciones",
     "cuerpo": "Necesito solicitar 5 días de vacaciones para la siguiente quincena.",
-    "remitente": "empleado@empresa.com"
+    "remitente": "empleado@empresa.com",
+    "nombre_remitente": "Empleado Ejemplo"
   }'
 # Consultar el job_id devuelto en GET /status/{job_id}
 # El agente debe clasificar como dominio=RRHH
@@ -1068,7 +1077,7 @@ podman-compose logs -f                               # Todos los servicios
 # Paso 1 — enviar (devuelve job_id)
 curl -s -X POST http://localhost:8001/process \
   -H "Content-Type: application/json" \
-  -d '{"asunto": "ASUNTO", "cuerpo": "CUERPO", "remitente": "user@empresa.com"}'
+  -d '{"asunto": "ASUNTO", "cuerpo": "CUERPO", "remitente": "user@empresa.com", "nombre_remitente": "Nombre Usuario"}'
 # Paso 2 — consultar resultado
 curl -s http://localhost:8001/status/JOB_ID | python3 -m json.tool
 

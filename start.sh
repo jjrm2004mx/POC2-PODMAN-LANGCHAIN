@@ -13,8 +13,8 @@ set -e
 STACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$STACK_DIR/.env"
 
-# Detectar IP del host Windows desde WSL
-WSL_HOST_IP=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}')
+# Detectar IP del host Windows desde WSL (via ruta default, más confiable que resolv.conf)
+WSL_HOST_IP=$(ip route show | grep default | awk '{print $3}')
 
 if [ -z "$WSL_HOST_IP" ]; then
   echo "[ERROR] No se pudo detectar la IP del host Windows"

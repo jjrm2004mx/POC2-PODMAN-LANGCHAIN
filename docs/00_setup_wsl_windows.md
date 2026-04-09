@@ -555,7 +555,8 @@ CREATE TABLE IF NOT EXISTS ss_tickets (
   prioridad   VARCHAR(20),
   confianza   FLOAT,
   origen      VARCHAR(30) DEFAULT 'webhook',
-  remitente   VARCHAR(255),
+  remitente           VARCHAR(255),
+  nombre_remitente    VARCHAR(255),
   alerta      TEXT,
   fecha       TIMESTAMP DEFAULT NOW()
 );

@@ -238,7 +238,7 @@ el historial de ejecuciones del agente.
 
 | Tabla | Qué guarda |
 |---|---|
-| `ss_tickets` | Cada ticket: texto, dominio, categoría, prioridad, confianza, origen, remitente, alerta |
+| `ss_tickets` | Cada ticket: texto, dominio, categoría, prioridad, confianza, origen, remitente, nombre_remitente, alerta |
 | `ss_agent_runs` | Cada ejecución: iteraciones, tiempo, proveedor, resultado completo |
 
 **Nota sobre el prefijo `ss_`:** Las tablas usan el prefijo `ss` (Shared Services)
