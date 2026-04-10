@@ -300,7 +300,8 @@ Estados posibles del `status`:
 - `en_proceso` — el agente aún está trabajando, reintentar en unos segundos
 - `completado` — clasificación exitosa
 - `error` — ver campo `error` con el detalle
-- `ignorado` — correo duplicado detectado por `conversation_id`
+- `ignorado` — respuesta al hilo sin información nueva (`conversation_id` ya tenía ticket)
+- `enriquecido` — respuesta al hilo con información relevante detectada por LLM; se agregó comentario y/o adjuntos al ticket existente en ticket-management-backend. Ver campos `comment_id` y `adjuntos_agregados`
 
 ### Verificar cache Redis (segunda llamada idéntica)
 
@@ -474,6 +475,34 @@ SELECT iterations_used, COUNT(*) as total,
 FROM ss_agent_runs
 GROUP BY iterations_used
 ORDER BY iterations_used;"
+
+# Ver enriquecimientos de hilo (respuestas al hilo evaluadas por LLM)
+podman exec -it postgres psql -U admin -d ai -c "
+SELECT e.id, e.ticket_id, e.nombre_remitente, e.remitente,
+       e.relevante, e.razon, e.comment_id, e.adjuntos_agregados, e.creado_en
+FROM ss_enrichments e
+ORDER BY e.creado_en DESC
+LIMIT 10;"
+
+# Enriquecimientos de un ticket específico
+podman exec -it postgres psql -U admin -d ai -c "
+SELECT e.relevante, e.razon, e.comment_id, e.adjuntos_agregados, e.creado_en
+FROM ss_enrichments e
+WHERE e.ticket_id = PEGA-AQUI-TICKET-ID
+ORDER BY e.creado_en;"
+```
+
+### Migraciones
+
+```bash
+# Schema inicial (primera vez)
+podman exec -i postgres psql -U admin -d ai < docs/init.sql
+
+# Migración: columna nombre_remitente (si actualizas desde versión anterior)
+podman exec -i postgres psql -U admin -d ai < docs/migration_add_nombre_remitente.sql
+
+# Migración: tabla ss_enrichments (enriquecimiento de hilos con LLM)
+podman exec -i postgres psql -U admin -d ai < docs/migration_add_ss_enrichments.sql
 ```
 
 ### Backup rápido de la base de datos

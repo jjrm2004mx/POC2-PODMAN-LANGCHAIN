@@ -98,8 +98,17 @@ y lo clasifica de forma autónoma usando un **loop dinámico con decisión propi
 ### ¿Qué hace paso a paso?
 
 ```
-Ticket entra
+Ticket entra (POST /process)
      │
+     ▼
+¿Mismo conversation_id ya tiene ticket?
+     │ Sí → [enrich] ── LLM evalúa si la respuesta al hilo aporta info relevante
+     │            │    ✅ Relevante → agrega comentario y/o adjuntos al ticket existente
+     │            │                   status = "enriquecido"
+     │            │    ❌ No relevante → status = "ignorado"
+     │            └── Registra resultado en ss_enrichments
+     │
+     │ No →
      ▼
 [classify] ── Llama al LLM con el texto del ticket
      │         El LLM responde con JSON:
@@ -114,6 +123,7 @@ Ticket entra
 [save] ─────── Guarda en PostgreSQL (tabla ss_tickets)
      │         Registra la ejecución (tabla ss_agent_runs)
      │         Genera alerta según prioridad
+     │         Crea ticket en ticket-management-backend
      ▼
 Responde con el resultado completo al cliente
 ```
@@ -238,8 +248,10 @@ el historial de ejecuciones del agente.
 
 | Tabla | Qué guarda |
 |---|---|
-| `ss_tickets` | Cada ticket: texto, dominio, categoría, prioridad, confianza, origen, remitente, nombre_remitente, alerta |
+| `ss_tickets` | Cada ticket: texto, dominio, categoría, prioridad, confianza, origen, remitente, nombre_remitente, alerta, conversation_id |
 | `ss_agent_runs` | Cada ejecución: iteraciones, tiempo, proveedor, resultado completo |
+| `ss_adjuntos` | Metadatos de archivos adjuntos por ticket (nombre, tipo MIME) |
+| `ss_enrichments` | Cada evaluación de enriquecimiento de hilo: relevancia, razón, comment_id en ticket-management-backend, adjuntos agregados |
 
 **Nota sobre el prefijo `ss_`:** Las tablas usan el prefijo `ss` (Shared Services)
 para coexistir con otras tablas del mismo servidor PostgreSQL sin conflicto.

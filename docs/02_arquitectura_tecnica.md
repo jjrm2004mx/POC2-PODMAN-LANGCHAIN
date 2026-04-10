@@ -75,7 +75,8 @@
 │  │                                                                   │  │
 │  │  ┌──────────────────────────────────────────────────────────┐    │  │
 │  │  │  CAPA DE DATOS                                           │    │  │
-│  │  │  postgres :5432    DB: ai | ss_tickets, ss_agent_runs    │    │  │
+│  │  │  postgres :5432    DB: ai | ss_tickets, ss_agent_runs,   │    │  │
+│  │  │                           ss_adjuntos, ss_enrichments    │    │  │
 │  │  │  redis    :6379    Cache LLM (MD5, TTL 1h) + estado      │    │  │
 │  │  └──────────────────────────────────────────────────────────┘    │  │
 │  │                                                                   │  │
@@ -655,6 +656,8 @@ CREATE TABLE IF NOT EXISTS ss_tickets (
   remitente           VARCHAR(255),          -- Email del remitente
   nombre_remitente    VARCHAR(255),          -- Nombre del remitente (enviado por Power Automate)
   alerta              TEXT,                  -- Mensaje generado post-clasificación
+  external_ticket_id  VARCHAR(36),           -- UUID del ticket en ticket-management-backend
+  conversation_id     VARCHAR(200),          -- ID del hilo de Outlook — deduplicación y enriquecimiento
   created_at          TIMESTAMP DEFAULT NOW()
 );
 ```
@@ -672,6 +675,38 @@ CREATE TABLE IF NOT EXISTS ss_agent_runs (
   resultado       JSONB,            -- JSON completo de la clasificación
   duracion_ms     INTEGER,          -- Tiempo total de la ejecución en ms
   fecha           TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Tabla `ss_adjuntos` (metadatos de archivos adjuntos)
+
+```sql
+CREATE TABLE IF NOT EXISTS ss_adjuntos (
+  id          SERIAL PRIMARY KEY,
+  ticket_id   INTEGER REFERENCES ss_tickets(id) ON DELETE CASCADE,
+  nombre      VARCHAR(255) NOT NULL,
+  tipo_mime   VARCHAR(100),
+  storage_key VARCHAR(500),          -- Path en MinIO (uso futuro)
+  created_at  TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Tabla `ss_enrichments` (auditoría de enriquecimientos de hilo)
+
+Registra cada evaluación LLM de respuestas al hilo de un ticket existente.
+
+```sql
+CREATE TABLE IF NOT EXISTS ss_enrichments (
+  id                  SERIAL PRIMARY KEY,
+  ticket_id           INTEGER REFERENCES ss_tickets(id),
+  conversation_id     TEXT,          -- ID del hilo de Outlook
+  remitente           TEXT,          -- Email del remitente de la respuesta
+  nombre_remitente    TEXT,          -- Nombre del remitente de la respuesta
+  relevante           BOOLEAN NOT NULL, -- ¿El LLM determinó que aporta info relevante?
+  razon               TEXT,          -- Justificación del LLM
+  comment_id          TEXT,          -- UUID del comentario creado en ticket-management-backend
+  adjuntos_agregados  INTEGER DEFAULT 0,
+  creado_en           TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
