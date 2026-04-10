@@ -1,6 +1,6 @@
 # 03 — Guía Operacional
 ## shared-services-classifier · Operaciones del día a día
-**Ruta raíz: `~/podman/ai-stack` · Marzo 2026**
+**Ruta raíz: `~/podman/ticket-classification` · Marzo 2026**
 
 ---
 
@@ -29,7 +29,7 @@
 
 > **Siempre ejecutar desde la raíz del proyecto:**
 > ```bash
-> cd ~/podman/ai-stack
+> cd ~/podman/ticket-classification
 > ```
 > Antes de cualquier comando `podman-compose`, estar en esta carpeta.
 > Los servicios se comunican por nombre (`langchain-api:8000`),
@@ -46,7 +46,7 @@
 podman network create shared-network
 
 # 2. Dar permisos de ejecución al script de arranque
-chmod +x ~/podman/ai-stack/start.sh
+chmod +x ~/podman/ticket-classification/start.sh
 ```
 
 ### Levantar todo
@@ -58,12 +58,12 @@ chmod +x ~/podman/ai-stack/start.sh
 
 ```bash
 # Arranque recomendado (detecta IP de Windows automáticamente)
-~/podman/ai-stack/start.sh
+~/podman/ticket-classification/start.sh
 ```
 
 ```bash
 # Arranque directo (solo si SS-TICKET no está en Windows o la IP es fija)
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose up -d
 ```
 
@@ -75,7 +75,7 @@ podman ps
 ### Apagar todo (datos se conservan)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose down
 # Los volúmenes postgres_data/, ollama_data/, grafana_data/ se preservan
 ```
@@ -83,7 +83,7 @@ podman-compose down
 ### Apagar y eliminar volúmenes (reset completo — PRECAUCIÓN)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 # ⚠️ Esto borra todos los datos de PostgreSQL, Redis y Grafana
 podman-compose down -v
 ```
@@ -91,7 +91,7 @@ podman-compose down -v
 ### Reiniciar un servicio específico
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart langchain-agent   # Reiniciar solo el agente
 podman-compose restart langchain-api     # Reiniciar solo la API
 podman-compose restart postgres          # Reiniciar solo la BD
@@ -122,7 +122,7 @@ podman stats
 ### Verificación rápida completa
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 echo "════════════════════════════════════"
 echo "ESTADO DEL SISTEMA — $(date)"
@@ -324,7 +324,7 @@ curl -s -X POST http://localhost:8001/process \
 ### Logs en tiempo real
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Todos los servicios simultáneamente (Ctrl+C para salir)
 podman-compose logs -f
@@ -481,10 +481,10 @@ ORDER BY iterations_used;"
 ```bash
 # Crear backup con fecha
 podman exec postgres pg_dump -U admin ai \
-  > ~/podman/ai-stack/backup_$(date +%Y%m%d_%H%M%S).sql
+  > ~/podman/ticket-classification/backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Verificar backup
-ls -lh ~/podman/ai-stack/backup_*.sql
+ls -lh ~/podman/ticket-classification/backup_*.sql
 ```
 
 ### Restaurar backup
@@ -492,7 +492,7 @@ ls -lh ~/podman/ai-stack/backup_*.sql
 ```bash
 # Restaurar desde un backup específico
 podman exec -i postgres psql -U admin -d ai \
-  < ~/podman/ai-stack/backup_20260315_143022.sql
+  < ~/podman/ticket-classification/backup_20260315_143022.sql
 ```
 
 ---
@@ -518,10 +518,10 @@ curl -s -X POST http://localhost:8001/process \
 ### Por defecto permanente (cambiar .env + reiniciar agente)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # 1. Editar .env
-nano ~/podman/ai-stack/.env
+nano ~/podman/ticket-classification/.env
 # Cambiar: AGENT_PROVIDER=openai
 
 # 2. Reiniciar solo el agente (no todo el stack)
@@ -556,10 +556,10 @@ Los dominios del clasificador son completamente configurables sin tocar código.
 ### Agregar un nuevo dominio (ejemplo: RRHH)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # 1. Editar .env
-nano ~/podman/ai-stack/.env
+nano ~/podman/ticket-classification/.env
 # Cambiar: AGENT_DOMAINS=IT,cliente,operaciones,RRHH,otro
 
 # 2. Reiniciar solo el agente
@@ -592,10 +592,10 @@ curl -s http://localhost:8001/health | python3 -m json.tool
 ### Flujo estándar para cambios en el agente
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # 1. Editar el código
-nano ~/podman/ai-stack/langchain-agent/agent.py
+nano ~/podman/ticket-classification/langchain-agent/agent.py
 
 # 2. Reconstruir solo la imagen del agente
 podman-compose build langchain-agent
@@ -616,9 +616,9 @@ curl -s -X POST http://localhost:8001/process \
 ### Flujo para cambios en la API (langchain-api)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
-nano ~/podman/ai-stack/langchain-api/main.py
+nano ~/podman/ticket-classification/langchain-api/main.py
 podman-compose build langchain-api
 podman-compose up -d langchain-api
 podman logs -f langchain-api
@@ -627,7 +627,7 @@ podman logs -f langchain-api
 ### Reconstrucción completa desde cero
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Apagar todo
 podman-compose down
@@ -858,8 +858,8 @@ En LangSmith → Runs → filtrar por:
 ### Cambiar el proyecto de LangSmith (dev → prod)
 
 ```bash
-cd ~/podman/ai-stack
-nano ~/podman/ai-stack/.env
+cd ~/podman/ticket-classification
+nano ~/podman/ticket-classification/.env
 # Cambiar: LANGCHAIN_PROJECT=shared-services-classifier-prod
 podman-compose restart langchain-agent
 podman-compose restart langchain-api
@@ -870,7 +870,7 @@ podman-compose restart langchain-api
 ## 14. Git — control de versiones
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Ver estado del repositorio
 git status
@@ -933,7 +933,7 @@ podman ps | grep ollama
 free -h
 
 # Reiniciar Ollama
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart ollama
 sleep 10
 
@@ -963,7 +963,7 @@ podman logs langchain-agent | grep "connection refused"
 podman logs postgres | tail -20
 
 # Reiniciar PostgreSQL
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart postgres
 sleep 15
 
@@ -978,7 +978,7 @@ podman exec postgres psql -U admin -d ai -c "SELECT version();"
 podman ps | grep redis
 
 # Reiniciar Redis
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart redis
 
 # Test de conexión
@@ -1007,10 +1007,10 @@ source ~/.bashrc
 podman inspect langchain-agent --format '{{.LogPath}}'
 
 # Comparar con __path__ en promtail.yml
-cat ~/podman/ai-stack/promtail.yml | grep __path__
+cat ~/podman/ticket-classification/promtail.yml | grep __path__
 
 # Si no coinciden, actualizar promtail.yml y reiniciar
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 nano promtail.yml
 podman-compose restart promtail
 ```
@@ -1022,7 +1022,7 @@ podman-compose restart promtail
 Ejecutar cada mañana antes de comenzar a trabajar:
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # ✅ 1. Contenedores corriendo
 podman ps --format "table {{.Names}}\t{{.Status}}" | grep -v "Exited"
@@ -1050,7 +1050,7 @@ podman exec postgres psql -U admin -d ai -c "SELECT COUNT(*) FROM ss_tickets;" -
 podman exec redis redis-cli ping | grep -q "PONG" && echo "Redis: OK" || echo "Redis: ❌"
 
 # ✅ 7. Disco disponible (>5GB recomendado)
-df -h ~/podman/ai-stack
+df -h ~/podman/ticket-classification
 
 # ✅ 8. RAM disponible (>4GB recomendado para Ollama)
 free -h | grep Mem
@@ -1062,9 +1062,9 @@ free -h | grep Mem
 
 ```bash
 # ── Stack ────────────────────────────────────────────────────────
-~/podman/ai-stack/start.sh                           # Levantar (detecta IP Windows automáticamente)
-cd ~/podman/ai-stack && podman-compose down          # Apagar
-cd ~/podman/ai-stack && podman-compose restart X     # Reiniciar servicio X
+~/podman/ticket-classification/start.sh                           # Levantar (detecta IP Windows automáticamente)
+cd ~/podman/ticket-classification && podman-compose down          # Apagar
+cd ~/podman/ticket-classification && podman-compose restart X     # Reiniciar servicio X
 podman ps                                            # Estado
 podman stats --no-stream                             # CPU y RAM
 
@@ -1100,11 +1100,11 @@ podman exec ollama ollama list                       # Ver modelos
 podman exec -it ollama ollama pull llama3.2:3b       # Actualizar modelo
 
 # ── Desarrollo ────────────────────────────────────────────────────
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose build langchain-agent && podman-compose up -d langchain-agent
 
 # ── Git ───────────────────────────────────────────────────────────
-cd ~/podman/ai-stack && git add . && git commit -m "mensaje" && git push
+cd ~/podman/ticket-classification && git add . && git commit -m "mensaje" && git push
 ```
 
 ---

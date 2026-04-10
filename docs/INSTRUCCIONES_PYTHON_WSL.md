@@ -34,7 +34,7 @@ source venv/bin/activate
 
 **Salida esperada:**
 ```bash
-(venv) jjrm@C85291:~/podman/ai-stack$
+(venv) jjrm@C85291:~/podman/ticket-classification$
 ```
 
 ---
@@ -69,7 +69,7 @@ Cada vez que abras una **nueva terminal** en WSL, necesitas:
 
 ```bash
 # 1. Navegar a la carpeta del proyecto
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # 2. Activar el venv
 source venv/bin/activate

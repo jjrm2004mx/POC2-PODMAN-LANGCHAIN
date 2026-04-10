@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # start.sh — Arranque del stack con IP dinámica de Windows
-# Uso: ~/podman/ai-stack/start.sh
+# Uso: ~/podman/ticket-classification/start.sh
 #
 # Necesario cuando ticket-management-backend corre en Windows (Podman Desktop).
 # La IP del host Windows cambia entre redes y reinicios de WSL.

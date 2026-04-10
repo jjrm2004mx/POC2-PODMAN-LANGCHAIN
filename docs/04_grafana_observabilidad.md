@@ -1,6 +1,6 @@
 # 04 — Grafana: Observabilidad del Stack
 ## shared-services-classifier · Configuración desde cero
-**Ruta raíz del proyecto: `~/podman/ai-stack`**
+**Ruta raíz del proyecto: `~/podman/ticket-classification`**
 **Marzo 2026**
 
 ---
@@ -42,12 +42,12 @@ El stack usa:
 Crear la estructura de carpetas desde la raíz del proyecto:
 
 ```bash
-mkdir -p ~/podman/ai-stack/grafana-provisioning/datasources
-mkdir -p ~/podman/ai-stack/grafana-provisioning/dashboards
-mkdir -p ~/podman/ai-stack/grafana-provisioning/dashboard-files
+mkdir -p ~/podman/ticket-classification/grafana-provisioning/datasources
+mkdir -p ~/podman/ticket-classification/grafana-provisioning/dashboards
+mkdir -p ~/podman/ticket-classification/grafana-provisioning/dashboard-files
 
 # Verificar
-tree ~/podman/ai-stack/grafana-provisioning
+tree ~/podman/ticket-classification/grafana-provisioning
 # Resultado esperado:
 # grafana-provisioning
 # ├── dashboard-files
@@ -62,7 +62,7 @@ tree ~/podman/ai-stack/grafana-provisioning
 ### 3.1 Datasources — `datasources/datasources.yml`
 
 ```bash
-cat > ~/podman/ai-stack/grafana-provisioning/datasources/datasources.yml << 'EOF'
+cat > ~/podman/ticket-classification/grafana-provisioning/datasources/datasources.yml << 'EOF'
 apiVersion: 1
 
 datasources:
@@ -91,7 +91,7 @@ EOF
 ### 3.2 Configuración de dashboards — `dashboards/dashboards.yml`
 
 ```bash
-cat > ~/podman/ai-stack/grafana-provisioning/dashboards/dashboards.yml << 'EOF'
+cat > ~/podman/ticket-classification/grafana-provisioning/dashboards/dashboards.yml << 'EOF'
 apiVersion: 1
 
 providers:
@@ -114,7 +114,7 @@ Copiar desde el repositorio o descargar desde el chat:
 
 ```bash
 cp /mnt/c/Users/TU_USUARIO/Downloads/agent-metrics.json \
-   ~/podman/ai-stack/grafana-provisioning/dashboard-files/
+   ~/podman/ticket-classification/grafana-provisioning/dashboard-files/
 ```
 
 Paneles incluidos:
@@ -128,7 +128,7 @@ Paneles incluidos:
 
 ```bash
 cp /mnt/c/Users/TU_USUARIO/Downloads/agent-logs.json \
-   ~/podman/ai-stack/grafana-provisioning/dashboard-files/
+   ~/podman/ticket-classification/grafana-provisioning/dashboard-files/
 ```
 
 Paneles incluidos:
@@ -139,7 +139,7 @@ Paneles incluidos:
 ### Verificar estructura completa
 
 ```bash
-tree ~/podman/ai-stack/grafana-provisioning
+tree ~/podman/ticket-classification/grafana-provisioning
 # Resultado esperado:
 # grafana-provisioning
 # ├── dashboard-files
@@ -191,7 +191,7 @@ Grafana corre como UID `472` dentro del contenedor. En Podman rootless
 este UID necesita permisos explícitos sobre `grafana_data/`:
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman unshare chown -R 472:472 grafana_data/
 
 # Verificar
@@ -205,7 +205,7 @@ Este paso solo es necesario la primera vez o si el directorio se recreó.
 ## 6. Primer arranque con provisioning
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Si Grafana ya estaba corriendo — bajar todo y subir limpio
 podman-compose down
@@ -293,11 +293,11 @@ provisioning, generando duplicados con UIDs aleatorios.
 
 ```bash
 # Detener Grafana
-cd ~/podman/ai-stack && podman stop grafana
+cd ~/podman/ticket-classification && podman stop grafana
 
 # Limpiar base de datos de Grafana (elimina datasources manuales)
 # Los dashboards NO se pierden — están en dashboard-files/
-podman unshare rm -f ~/podman/ai-stack/grafana_data/grafana.db
+podman unshare rm -f ~/podman/ticket-classification/grafana_data/grafana.db
 
 # Reiniciar — el provisioning recrea todo con UIDs correctos
 podman-compose up -d grafana
@@ -314,7 +314,7 @@ podman logs --tail 10 grafana
 # Muestra: GF_PATHS_DATA='/var/lib/grafana' is not writable
 
 # Fix
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman unshare chown -R 472:472 grafana_data/
 podman-compose up -d grafana
 ```

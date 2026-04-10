@@ -27,7 +27,7 @@ y las clasifica automáticamente para que lleguen al lugar correcto.
 
 ## Estado actual del stack
 
-Todos los servicios corren con `podman-compose` desde `~/podman/ai-stack`.
+Todos los servicios corren con `podman-compose` desde `~/podman/ticket-classification`.
 
 | Componente | Imagen / Build | Puerto | Rol |
 |---|---|---|---|
@@ -282,7 +282,7 @@ operacionales. Los dominios no están fijos en el código — se configuran
 en el `.env`:
 
 ```bash
-# En ~/podman/ai-stack/.env
+# En ~/podman/ticket-classification/.env
 AGENT_DOMAINS=IT,cliente,operaciones,otro
 ```
 
@@ -290,12 +290,12 @@ AGENT_DOMAINS=IT,cliente,operaciones,otro
 
 ```bash
 # 1. Editar .env
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 nano .env
 # Cambiar: AGENT_DOMAINS=IT,cliente,operaciones,RRHH,otro
 
 # 2. Reiniciar solo el agente
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart langchain-agent
 
 # Sin tocar código. Sin modificar la base de datos.
@@ -397,7 +397,7 @@ Desde Grafana puedes buscar en todos los logs con consultas LogQL.
 
 ## El archivo .env — Las llaves del edificio
 
-El archivo `~/podman/ai-stack/.env` contiene todas las configuraciones
+El archivo `~/podman/ticket-classification/.env` contiene todas las configuraciones
 secretas y parámetros del sistema.
 
 > ⚠️ **NUNCA subir `.env` a Git.**
@@ -458,8 +458,8 @@ El mismo stack que corre en tu laptop WSL2 se despliega en
 una MV Unix o AWS con solo 4 comandos:
 
 ```bash
-git clone https://github.com/jjrm2004mx/POC2-PODMAN-LANGCHAIN.git ~/podman/ai-stack
-cd ~/podman/ai-stack
+git clone https://github.com/jjrm2004mx/POC2-PODMAN-LANGCHAIN.git ~/podman/ticket-classification
+cd ~/podman/ticket-classification
 cp env.txt .env
 nano .env          # Completar con keys reales de producción
 podman-compose up -d

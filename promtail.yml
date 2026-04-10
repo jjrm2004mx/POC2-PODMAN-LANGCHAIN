@@ -1,6 +1,6 @@
 # =============================================================================
 # promtail.yml — shared-services-classifier
-# Ruta: ~/podman/ai-stack/promtail.yml
+# Ruta: ~/podman/ticket-classification/promtail.yml
 # Marzo 2026
 # =============================================================================
 # Lee logs desde journald.

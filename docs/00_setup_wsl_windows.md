@@ -1,6 +1,6 @@
 # 00 — Setup WSL + Windows
 ## shared-services-classifier · Instalación desde cero
-**Ruta raíz del proyecto: `~/podman/ai-stack`**
+**Ruta raíz del proyecto: `~/podman/ticket-classification`**
 **Marzo 2026**
 
 ---
@@ -221,7 +221,7 @@ pwd
 **Estructura completa esperada:**
 
 ```
-~/podman/ai-stack/                         ← RAÍZ DEL PROYECTO
+~/podman/ticket-classification/                         ← RAÍZ DEL PROYECTO
 ├── docker-compose.yml                     ← Definición de todos los servicios
 ├── .env                                   ← Variables secretas (NO subir a Git)
 ├── env.txt                                ← Plantilla del .env (SÍ en Git)
@@ -254,7 +254,7 @@ pwd
 **Crear el `.gitignore`:**
 
 ```bash
-cat > ~/podman/ai-stack/.gitignore << 'EOF'
+cat > ~/podman/ticket-classification/.gitignore << 'EOF'
 # Volúmenes de contenedores — datos persistentes
 postgres_data/
 ollama_data/
@@ -296,24 +296,24 @@ EOF
 ```bash
 cd ~/podman
 
-# Clonar el repositorio en la carpeta ai-stack
-git clone https://github.com/jjrm2004mx/POC2-PODMAN-LANGCHAIN.git ai-stack
+# Clonar el repositorio en la carpeta ticket-classification
+git clone https://github.com/jjrm2004mx/POC2-PODMAN-LANGCHAIN.git ticket-classification
 
 # Entrar al proyecto — ESTA ES TU RUTA RAÍZ SIEMPRE
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Verificar estado del repo
 git status
 git log --oneline -5
 
 # Ver estructura
-tree ~/podman/ai-stack -L 2
+tree ~/podman/ticket-classification -L 2
 ```
 
 **Si el repositorio está vacío y necesitas inicializar:**
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Crear directorios
 mkdir -p docs langchain-agent langchain-api n8n-workflows
@@ -330,13 +330,13 @@ git push origin main
 ## 8. Configurar variables de entorno
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Copiar plantilla
 cp env.txt .env
 
 # Editar con nano
-nano ~/podman/ai-stack/.env
+nano ~/podman/ticket-classification/.env
 ```
 
 **Contenido completo del `.env` para desarrollo en WSL:**
@@ -391,7 +391,7 @@ AGENT_PORT=8001
 **Crear `env.txt` — plantilla para Git (sin keys reales):**
 
 ```bash
-cat > ~/podman/ai-stack/env.txt << 'EOF'
+cat > ~/podman/ticket-classification/env.txt << 'EOF'
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # shared-services-classifier — Plantilla de variables
 # cp env.txt .env  y completar con valores reales
@@ -439,7 +439,7 @@ El stack anterior monitoreaba `langchain-api` pero no el nuevo `langchain-agent`
 Reemplazar con la versión completa:
 
 ```bash
-cat > ~/podman/ai-stack/prometheus.yml << 'EOF'
+cat > ~/podman/ticket-classification/prometheus.yml << 'EOF'
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -474,7 +474,7 @@ El archivo original usa `/var/lib/docker/containers` y `/var/run/docker.sock`
 (rutas de Docker). Podman rootless en WSL2 usa rutas distintas:
 
 ```bash
-cat > ~/podman/ai-stack/promtail.yml << 'EOF'
+cat > ~/podman/ticket-classification/promtail.yml << 'EOF'
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -517,7 +517,7 @@ EOF
 ### Paso 1 — Descargar el modelo Ollama (solo la primera vez, ~2 GB)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Levantar solo Ollama
 podman-compose up -d ollama
@@ -538,7 +538,7 @@ podman exec -it ollama ollama list
 ### Paso 2 — Crear tablas en PostgreSQL (solo la primera vez)
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Levantar PostgreSQL
 podman-compose up -d postgres
@@ -586,7 +586,7 @@ SQL
 ### Paso 3 — Levantar el stack completo
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # Levantar todos los servicios en background
 podman-compose up -d
@@ -606,7 +606,7 @@ Esperar **60 segundos** después del `up -d` antes de ejecutar las verificacione
 
 ```bash
 # ── 1. Estado general ─────────────────────────────────────────────
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman ps
 # Todos los contenedores deben aparecer con STATUS "Up"
 
@@ -671,11 +671,11 @@ podman exec -it postgres psql -U admin -d ai \
 
 ## 12. Comandos de uso diario
 
-> ⚠️ **Regla de oro:** Siempre ejecutar desde `~/podman/ai-stack`
+> ⚠️ **Regla de oro:** Siempre ejecutar desde `~/podman/ticket-classification`
 
 ```bash
 # ── Acceso rápido a la raíz ───────────────────────────────────────
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 
 # ── Ciclo de vida del stack ───────────────────────────────────────
 podman-compose up -d                          # Levantar todo
@@ -691,15 +691,15 @@ podman logs -f langchain-api                  # Solo la API
 podman logs --tail 100 langchain-agent        # Últimas 100 líneas
 
 # ── Desarrollo: reconstruir después de cambios ────────────────────
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose build langchain-agent          # Reconstruir imagen del agente
 podman-compose up -d langchain-agent          # Reemplazar el contenedor
 
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose build langchain-api            # Reconstruir imagen de la API
 podman-compose up -d langchain-api
 
-cd ~/podman/ai-stack                          # Reconstruir todo desde cero
+cd ~/podman/ticket-classification                          # Reconstruir todo desde cero
 podman-compose down
 podman-compose build --no-cache
 podman-compose up -d
@@ -729,7 +729,7 @@ podman exec -it ollama ollama list            # Ver modelos descargados
 podman exec -it ollama ollama pull llama3.2:3b # Descargar/actualizar modelo
 
 # ── Git ───────────────────────────────────────────────────────────
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 git status
 git add .
 git commit -m "feat: descripción del cambio"
@@ -743,7 +743,7 @@ git push origin main
 ### Contenedor no arranca
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman logs langchain-agent        # Ver error específico
 podman events --since 10m          # Ver eventos recientes de Podman
 ```
@@ -792,7 +792,7 @@ podman exec -it ollama ollama list
 ss -tlnp | grep 8001
 
 # Si es un contenedor previo sin apagar:
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose down
 podman-compose up -d
 ```
@@ -804,17 +804,17 @@ podman-compose up -d
 podman inspect langchain-agent --format '{{.LogPath}}'
 
 # Si la ruta no coincide, actualizar __path__ en promtail.yml
-nano ~/podman/ai-stack/promtail.yml
+nano ~/podman/ticket-classification/promtail.yml
 
 # Reiniciar Promtail
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 podman-compose restart promtail
 ```
 
 ### Verificación rápida de todo el sistema
 
 ```bash
-cd ~/podman/ai-stack
+cd ~/podman/ticket-classification
 echo "=== CONTENEDORES ===" \
   && podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 echo "=== AGENTE ===" \

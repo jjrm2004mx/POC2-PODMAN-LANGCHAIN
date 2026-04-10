@@ -1,6 +1,6 @@
 # =============================================================================
 # prometheus.yml — shared-services-classifier
-# Ruta: ~/podman/ai-stack/prometheus.yml
+# Ruta: ~/podman/ticket-classification/prometheus.yml
 # Marzo 2026
 # =============================================================================
 # Scrape cada 15s a todos los servicios del stack que exponen /metrics

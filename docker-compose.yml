@@ -1,12 +1,12 @@
 # =============================================================================
 # shared-services-classifier — Docker Compose (runtime: podman-compose)
-# Ruta raíz: ~/podman/ai-stack
+# Ruta raíz: ~/podman/ticket-classification
 # Marzo 2026
 # =============================================================================
 # USO:
-#   cd ~/podman/ai-stack && podman-compose up -d
-#   cd ~/podman/ai-stack && podman-compose down
-#   cd ~/podman/ai-stack && podman-compose logs -f langchain-agent
+#   cd ~/podman/ticket-classification && podman-compose up -d
+#   cd ~/podman/ticket-classification && podman-compose down
+#   cd ~/podman/ticket-classification && podman-compose logs -f langchain-agent
 #
 # NOTA Podman rootless:
 #   Todas las imágenes usan prefijo docker.io/ explícito.
