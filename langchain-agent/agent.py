@@ -411,12 +411,14 @@ async def save_node(state: AgentState) -> AgentState:
             f"data={data_ss} adjuntos={len(files_ss)}",
             flush=True,
         )
+        # Siempre multipart/form-data (con o sin adjuntos), igual que curl -F
+        multipart = [(k, (None, str(v), "text/plain")) for k, v in data_ss.items()]
+        multipart += files_ss
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{TICKET_MGMT_API_URL}/internal/tickets",
                 headers={"X-Api-Key": TICKET_MGMT_API_KEY},
-                data=data_ss,
-                **({"files": files_ss} if files_ss else {}),
+                files=multipart,
             )
             print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
