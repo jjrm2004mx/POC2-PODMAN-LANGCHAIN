@@ -166,6 +166,7 @@ async def save_node(state: AgentState) -> AgentState:
         email_id=state.email_id,
         thread_id=state.thread_id,
         fecha_correo=state.fecha_correo,
+        email_type=state.email_type,
     )
 
     state.classification["ticket_id"]           = ticket_id

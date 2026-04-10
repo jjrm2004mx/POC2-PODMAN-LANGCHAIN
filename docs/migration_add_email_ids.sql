@@ -24,3 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_thread_id
 ALTER TABLE ss_enrichments
     ADD COLUMN IF NOT EXISTS email_id  TEXT,
     ADD COLUMN IF NOT EXISTS thread_id TEXT;
+
+-- ss_tickets: tipo de clasificación del correo
+ALTER TABLE ss_tickets
+    ADD COLUMN IF NOT EXISTS email_type TEXT;  -- nuevo | reply | duplicado

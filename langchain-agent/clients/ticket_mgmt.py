@@ -1,3 +1,4 @@
+import sys
 import base64
 import httpx
 from typing import Optional, List
@@ -62,7 +63,7 @@ async def create_ticket(
     print(
         f"[TICKET-MGMT REQUEST] URL={TICKET_MGMT_API_URL}/internal/tickets "
         f"data={data} adjuntos={len(files_ss)}",
-        flush=True,
+        flush=True, file=sys.stdout,
     )
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -71,7 +72,7 @@ async def create_ticket(
             headers=_headers(),
             files=multipart,
         )
-        print(f"[TICKET-MGMT RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
+        print(f"[TICKET-MGMT RESPONSE] status={resp.status_code} body={resp.text}", flush=True, file=sys.stdout)
         resp.raise_for_status()
         ss_data = resp.json()
         external_ticket_id = ss_data.get("ticketId")
@@ -104,7 +105,7 @@ async def add_comment(
         )
         resp.raise_for_status()
         comment_id = resp.json().get("commentId")
-        print(f"[ENRICH] Comentario agregado commentId={comment_id}", flush=True)
+        print(f"[ENRICH] Comentario agregado commentId={comment_id}", flush=True, file=sys.stdout)
         return comment_id
 
 
@@ -138,5 +139,5 @@ async def add_attachments(
         )
         resp.raise_for_status()
         count = len(resp.json().get("adjuntosAgregados", []))
-        print(f"[ENRICH] {count} adjunto(s) agregado(s)", flush=True)
+        print(f"[ENRICH] {count} adjunto(s) agregado(s)", flush=True, file=sys.stdout)
         return count

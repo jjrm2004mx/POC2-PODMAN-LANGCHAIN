@@ -64,6 +64,7 @@ async def insert_ticket(
     email_id: Optional[str] = None,
     thread_id: Optional[str] = None,
     fecha_correo: Optional[str] = None,
+    email_type: Optional[str] = None,
 ) -> int:
     """Inserta un ticket en ss_tickets y retorna el id generado."""
     fecha_dt: Optional[datetime] = None
@@ -79,13 +80,13 @@ async def insert_ticket(
             """INSERT INTO ss_tickets
                (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
                 nombre_remitente, alerta, categoria_propuesta, requiere_revision,
-                conversation_id, email_id, thread_id, fecha_correo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                conversation_id, email_id, thread_id, fecha_correo, email_type)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                RETURNING id""",
             cuerpo, asunto, dominio, categoria, prioridad, float(confianza),
             origen, remitente, nombre_remitente, alerta,
             categoria_propuesta, requiere_revision, conversation_id,
-            email_id, thread_id, fecha_dt,
+            email_id, thread_id, fecha_dt, email_type,
         )
     finally:
         await conn.close()
