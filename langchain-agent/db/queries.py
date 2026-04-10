@@ -72,7 +72,7 @@ async def insert_ticket(
                (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
                 nombre_remitente, alerta, categoria_propuesta, requiere_revision,
                 conversation_id, email_id, thread_id, fecha_correo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::timestamptz)
                RETURNING id""",
             cuerpo, asunto, dominio, categoria, prioridad, float(confianza),
             origen, remitente, nombre_remitente, alerta,
