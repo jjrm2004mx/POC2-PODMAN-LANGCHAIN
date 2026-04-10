@@ -432,7 +432,7 @@ async def save_node(state: AgentState) -> AgentState:
                 headers={"X-Api-Key": TICKET_MGMT_API_KEY},
                 files=multipart,
             )
-            print(f"[SS-TICKET RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
+            print(f"[TICKET-MGMT RESPONSE] status={resp.status_code} body={resp.text}", flush=True)
             resp.raise_for_status()
             ss_data = resp.json()
             external_ticket_id = ss_data.get("ticketId")
