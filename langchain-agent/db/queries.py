@@ -1,5 +1,6 @@
 import asyncpg
 from typing import Optional
+from datetime import datetime, timezone
 from agent.state import DATABASE_URL
 
 # =============================================================================
@@ -65,6 +66,13 @@ async def insert_ticket(
     fecha_correo: Optional[str] = None,
 ) -> int:
     """Inserta un ticket en ss_tickets y retorna el id generado."""
+    fecha_dt: Optional[datetime] = None
+    if fecha_correo:
+        try:
+            fecha_dt = datetime.fromisoformat(fecha_correo.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
     conn = await asyncpg.connect(DATABASE_URL)
     try:
         return await conn.fetchval(
@@ -72,12 +80,12 @@ async def insert_ticket(
                (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
                 nombre_remitente, alerta, categoria_propuesta, requiere_revision,
                 conversation_id, email_id, thread_id, fecha_correo)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::timestamptz)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                RETURNING id""",
             cuerpo, asunto, dominio, categoria, prioridad, float(confianza),
             origen, remitente, nombre_remitente, alerta,
             categoria_propuesta, requiere_revision, conversation_id,
-            email_id, thread_id, fecha_correo,
+            email_id, thread_id, fecha_dt,
         )
     finally:
         await conn.close()
