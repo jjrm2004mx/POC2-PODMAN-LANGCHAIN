@@ -19,6 +19,32 @@ async def get_ticket_by_conversation_id(conversation_id: str) -> Optional[asyncp
         await conn.close()
 
 
+async def get_ticket_by_email_id(email_id: str) -> Optional[asyncpg.Record]:
+    """Retorna el ticket cuyo email_id coincide (detección de duplicado)."""
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        return await conn.fetchrow(
+            "SELECT id, external_ticket_id, asunto, dominio, categoria "
+            "FROM ss_tickets WHERE email_id = $1",
+            email_id,
+        )
+    finally:
+        await conn.close()
+
+
+async def get_ticket_by_thread_id(thread_id: str) -> Optional[asyncpg.Record]:
+    """Retorna el ticket más reciente del hilo (detección de reply)."""
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        return await conn.fetchrow(
+            "SELECT id, external_ticket_id, asunto, dominio, categoria "
+            "FROM ss_tickets WHERE thread_id = $1 ORDER BY id DESC LIMIT 1",
+            thread_id,
+        )
+    finally:
+        await conn.close()
+
+
 async def insert_ticket(
     *,
     cuerpo: str,
@@ -34,6 +60,9 @@ async def insert_ticket(
     categoria_propuesta: Optional[str],
     requiere_revision: bool,
     conversation_id: Optional[str],
+    email_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+    fecha_correo: Optional[str] = None,
 ) -> int:
     """Inserta un ticket en ss_tickets y retorna el id generado."""
     conn = await asyncpg.connect(DATABASE_URL)
@@ -41,12 +70,14 @@ async def insert_ticket(
         return await conn.fetchval(
             """INSERT INTO ss_tickets
                (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
-                nombre_remitente, alerta, categoria_propuesta, requiere_revision, conversation_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                nombre_remitente, alerta, categoria_propuesta, requiere_revision,
+                conversation_id, email_id, thread_id, fecha_correo)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                RETURNING id""",
             cuerpo, asunto, dominio, categoria, prioridad, float(confianza),
             origen, remitente, nombre_remitente, alerta,
             categoria_propuesta, requiere_revision, conversation_id,
+            email_id, thread_id, fecha_correo,
         )
     finally:
         await conn.close()
@@ -105,6 +136,8 @@ async def insert_enrichment(
     *,
     ticket_id: int,
     conversation_id: Optional[str],
+    email_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
     remitente: Optional[str],
     nombre_remitente: Optional[str],
     relevante: bool,
@@ -117,10 +150,12 @@ async def insert_enrichment(
     try:
         await conn.execute(
             """INSERT INTO ss_enrichments
-               (ticket_id, conversation_id, remitente, nombre_remitente,
+               (ticket_id, conversation_id, email_id, thread_id,
+                remitente, nombre_remitente,
                 relevante, razon, comment_id, adjuntos_agregados)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
-            ticket_id, conversation_id, remitente, nombre_remitente,
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+            ticket_id, conversation_id, email_id, thread_id,
+            remitente, nombre_remitente,
             relevante, razon, comment_id, adjuntos_agregados,
         )
     finally:

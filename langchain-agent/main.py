@@ -10,6 +10,7 @@ from typing import Optional, List
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL, enrich_ticket
+from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, insert_enrichment
 
 app = FastAPI(
     title="shared-services-classifier — Agent",
@@ -44,7 +45,11 @@ class ProcessRequest(BaseModel):
     cuerpo: str
     remitente: Optional[str] = None
     nombre_remitente: Optional[str] = None
-    conversation_id: Optional[str] = None   # ID del hilo Outlook — deduplicación
+    conversation_id: Optional[str] = None   # SMTP Message-ID — solo auditoría
+    id: Optional[str] = None                # Gmail message ID — deduplicación
+    threadId: Optional[str] = None          # Gmail thread ID — detección de reply
+    fecha_correo: Optional[str] = None      # Fecha ISO del correo
+    origen: Optional[str] = None            # Proveedor: gmail, outlook, etc.
     adjuntos: Optional[List[AdjuntoInfo]] = []
     provider: Optional[str] = None
     max_iterations: Optional[int] = None
@@ -92,94 +97,119 @@ async def process_email_job(job_id: str, request: ProcessRequest):
     start_time = time.time()
     run_id = job_id
 
-    # ─── DEDUPLICACIÓN: enriquecer si ya existe un ticket para este hilo ──────
-    if request.conversation_id:
+    # ─── CLASIFICACIÓN DE TIPO: duplicado / reply / nuevo ────────────────────
+    email_type = "nuevo"
+    dedup_row  = None
+
+    try:
+        if request.id:
+            dedup_row = await get_ticket_by_email_id(request.id)
+            if dedup_row:
+                email_type = "duplicado"
+
+        if email_type == "nuevo" and request.threadId:
+            dedup_row = await get_ticket_by_thread_id(request.threadId)
+            if dedup_row:
+                email_type = "reply"
+
+        print(
+            f"[DEDUP] email_type={email_type} "
+            f"email_id={request.id} thread_id={request.threadId}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"[WARN DEDUP] Error clasificando tipo de correo: {e}", flush=True)
+
+    # ─── DUPLICADO: el mensaje ya fue procesado ───────────────────────────────
+    if email_type == "duplicado":
+        await redis_client.setex(
+            f"job:{job_id}",
+            JOB_TTL_SECONDS,
+            json.dumps({
+                "status":              "duplicado",
+                "motivo":              "email_id ya existe en el sistema",
+                "ticket_id_existente": dedup_row["id"],
+                "external_ticket_id":  dedup_row["external_ticket_id"],
+                "email_id":            request.id,
+                "thread_id":           request.threadId,
+                "conversation_id":     request.conversation_id,
+            }),
+        )
+        return
+
+    # ─── REPLY: nuevo mensaje en un hilo ya conocido → enriquecer ────────────
+    if email_type == "reply":
+        ticket_id_local    = dedup_row["id"]
+        external_ticket_id = dedup_row["external_ticket_id"]
+        print(
+            f"[DEDUP] thread_id={request.threadId} "
+            f"ya tiene ticket_id={ticket_id_local} — evaluando enriquecimiento",
+            flush=True,
+        )
+
+        enrich_result = {"relevante": False, "razon": "sin external_ticket_id", "comment_id": None, "adjuntos_agregados": 0}
+        if external_ticket_id:
+            enrich_result = await enrich_ticket(
+                external_ticket_id=external_ticket_id,
+                ticket_id_local=ticket_id_local,
+                ticket_asunto_original=dedup_row["asunto"] or "",
+                ticket_dominio=dedup_row["dominio"] or "",
+                ticket_categoria=dedup_row["categoria"] or "",
+                asunto=request.asunto,
+                cuerpo=request.cuerpo,
+                remitente=request.remitente,
+                nombre_remitente=request.nombre_remitente,
+                adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
+                provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
+            )
+
         try:
-            conn = await asyncpg.connect(DATABASE_URL)
-            try:
-                row = await conn.fetchrow(
-                    "SELECT id, external_ticket_id, asunto, dominio, categoria "
-                    "FROM ss_tickets WHERE conversation_id = $1",
-                    request.conversation_id,
-                )
-            finally:
-                await conn.close()
-
-            if row:
-                ticket_id_local    = row["id"]
-                external_ticket_id = row["external_ticket_id"]
-                print(
-                    f"[DEDUP] conversation_id={request.conversation_id} "
-                    f"ya tiene ticket_id={ticket_id_local} — evaluando enriquecimiento",
-                    flush=True,
-                )
-
-                enrich_result = {"relevante": False, "razon": "sin external_ticket_id", "comment_id": None, "adjuntos_agregados": 0}
-                if external_ticket_id:
-                    enrich_result = await enrich_ticket(
-                        external_ticket_id=external_ticket_id,
-                        ticket_id_local=ticket_id_local,
-                        ticket_asunto_original=row["asunto"] or "",
-                        ticket_dominio=row["dominio"] or "",
-                        ticket_categoria=row["categoria"] or "",
-                        asunto=request.asunto,
-                        cuerpo=request.cuerpo,
-                        remitente=request.remitente,
-                        nombre_remitente=request.nombre_remitente,
-                        adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
-                        provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
-                    )
-
-                # Auditoría local en ss_enrichments
-                try:
-                    conn = await asyncpg.connect(DATABASE_URL)
-                    try:
-                        await conn.execute(
-                            """INSERT INTO ss_enrichments
-                               (ticket_id, conversation_id, remitente, nombre_remitente,
-                                relevante, razon, comment_id, adjuntos_agregados)
-                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
-                            ticket_id_local,
-                            request.conversation_id,
-                            request.remitente,
-                            request.nombre_remitente,
-                            enrich_result["relevante"],
-                            enrich_result.get("razon"),
-                            enrich_result.get("comment_id"),
-                            enrich_result.get("adjuntos_agregados", 0),
-                        )
-                    finally:
-                        await conn.close()
-                except Exception as e:
-                    print(f"[WARN ss_enrichments] {e}", flush=True)
-
-                status = "enriquecido" if enrich_result["relevante"] else "ignorado"
-                motivo = enrich_result.get("razon") or "respuesta a cadena existente sin información nueva"
-                await redis_client.setex(
-                    f"job:{job_id}",
-                    JOB_TTL_SECONDS,
-                    json.dumps({
-                        "status":              status,
-                        "motivo":              motivo,
-                        "ticket_id_existente": ticket_id_local,
-                        "external_ticket_id":  external_ticket_id,
-                        "conversation_id":     request.conversation_id,
-                        "comment_id":          enrich_result.get("comment_id"),
-                        "adjuntos_agregados":  enrich_result.get("adjuntos_agregados", 0),
-                    }),
-                )
-                return
+            await insert_enrichment(
+                ticket_id=ticket_id_local,
+                conversation_id=request.conversation_id,
+                email_id=request.id,
+                thread_id=request.threadId,
+                remitente=request.remitente,
+                nombre_remitente=request.nombre_remitente,
+                relevante=enrich_result["relevante"],
+                razon=enrich_result.get("razon"),
+                comment_id=enrich_result.get("comment_id"),
+                adjuntos_agregados=enrich_result.get("adjuntos_agregados", 0),
+            )
         except Exception as e:
-            print(f"[WARN DEDUP] Error verificando conversation_id: {e}", flush=True)
+            print(f"[WARN ss_enrichments] {e}", flush=True)
+
+        status = "enriquecido" if enrich_result["relevante"] else "ignorado"
+        motivo = enrich_result.get("razon") or "respuesta a cadena existente sin información nueva"
+        await redis_client.setex(
+            f"job:{job_id}",
+            JOB_TTL_SECONDS,
+            json.dumps({
+                "status":              status,
+                "motivo":              motivo,
+                "ticket_id_existente": ticket_id_local,
+                "external_ticket_id":  external_ticket_id,
+                "email_id":            request.id,
+                "thread_id":           request.threadId,
+                "conversation_id":     request.conversation_id,
+                "comment_id":          enrich_result.get("comment_id"),
+                "adjuntos_agregados":  enrich_result.get("adjuntos_agregados", 0),
+            }),
+        )
+        return
 
     try:
         initial_state = AgentState(
             asunto=request.asunto,
             cuerpo=request.cuerpo,
-            origen="webhook",
+            origen=request.origen or "webhook",
             remitente=request.remitente,
             nombre_remitente=request.nombre_remitente,
             conversation_id=request.conversation_id,
+            email_id=request.id,
+            thread_id=request.threadId,
+            fecha_correo=request.fecha_correo,
+            email_type=email_type,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
             adjuntos=[adj.dict() for adj in (request.adjuntos or [])],

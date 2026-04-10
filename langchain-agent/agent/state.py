@@ -114,7 +114,11 @@ class AgentState(BaseModel):
     origen:            str = "webhook"
     remitente:         Optional[str] = None
     nombre_remitente:  Optional[str] = None
-    conversation_id:   Optional[str] = None
+    conversation_id:   Optional[str] = None  # SMTP Message-ID — solo auditoría
+    email_id:          Optional[str] = None  # Gmail message ID — deduplicación
+    thread_id:         Optional[str] = None  # Gmail thread ID — detección de reply
+    fecha_correo:      Optional[str] = None  # Fecha ISO del correo
+    email_type:        Optional[str] = None  # nuevo | reply | duplicado
     provider:          str = "ollama"
     iterations:        int = 0
     max_iterations:    int = MAX_ITERATIONS
