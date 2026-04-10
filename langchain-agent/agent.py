@@ -19,7 +19,7 @@ FUZZY_THRESHOLD = int(os.getenv("FUZZY_THRESHOLD", "80"))
 MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.7"))
 
 # =============================================================================
-# CATÁLOGO REMOTO — cargado desde SS-TICKET-SYSTEM al arrancar
+# CATÁLOGO REMOTO — cargado desde ticket-management-backend al arrancar
 # Si el servicio no está disponible, se usa el fallback del .env
 # _catalogo[dominio] = [categoria1, categoria2, ...]
 # =============================================================================
@@ -27,13 +27,13 @@ _catalogo: dict = {}
 
 def _cargar_catalogo_remoto() -> bool:
     """
-    Consulta GET /internal/classifications/active en SS-TICKET-SYSTEM.
+    Consulta GET /internal/classifications/active en ticket-management-backend.
     Carga el catálogo en _catalogo si responde correctamente.
     Timeout corto (3s) — nunca bloquea el arranque.
     Retorna True si cargó correctamente, False si usó fallback.
     """
     global _catalogo, AGENT_DOMAINS
-    url = f"{os.getenv('SS_TICKET_API_URL', 'http://ticket-management-backend:8080/api/v1')}/internal/classifications/active"
+    url = f"{os.getenv('SS_TICKET_API_URL')}/internal/classifications/active"
     api_key = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
     try:
         import httpx as _httpx
@@ -49,7 +49,7 @@ def _cargar_catalogo_remoto() -> bool:
         if catalogo_nuevo:
             _catalogo = catalogo_nuevo
             AGENT_DOMAINS = list(_catalogo.keys())
-            print(f"[CATALOGO] Cargado desde SS-TICKET-SYSTEM: {list(_catalogo.keys())}", flush=True)
+            print(f"[CATALOGO] Cargado desde ticket-management-backend: {list(_catalogo.keys())}", flush=True)
             return True
     except Exception as e:
         print(f"[CATALOGO] No disponible, usando .env como fallback: {e}", flush=True)
@@ -93,7 +93,7 @@ def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     # Categoría desconocida → marcar para revisión
     return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
-SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL", "http://ticket-management-backend:8080/api/v1")
+SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL")
 SS_TICKET_API_KEY = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
 DATABASE_URL = (
     f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
@@ -375,7 +375,7 @@ async def save_node(state: AgentState) -> AgentState:
     state.classification["categoria_propuesta"] = categoria_propuesta
     state.classification["requiere_revision"]   = requiere_revision
 
-    # ─── PASO 2: crear ticket en SS-TICKET-SYSTEM ─────────────────────────────
+    # ─── PASO 2: crear ticket en ticket-management-backend ────────────────────
     try:
         data_ss = {
             "title":               state.asunto,
@@ -445,7 +445,7 @@ async def save_node(state: AgentState) -> AgentState:
 
     except Exception as e:
         # El ticket ya está en nuestra BD — el error externo no es bloqueante
-        print(f"[WARN SS-TICKET] No se pudo crear en SS-TICKET-SYSTEM: {type(e).__name__}: {repr(e)}", flush=True)
+        print(f"[WARN SS-TICKET] No se pudo crear en ticket-management-backend: {type(e).__name__}: {repr(e)}", flush=True)
         state.classification["external_ticket_id"] = None
 
     return state

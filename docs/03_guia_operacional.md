@@ -42,7 +42,7 @@
 ### Primera vez — preparación inicial (solo una vez)
 
 ```bash
-# 1. Crear la red compartida con SS-TICKET-SYSTEM
+# 1. Crear la red compartida con ticket-management-backend
 podman network create shared-network
 
 # 2. Dar permisos de ejecución al script de arranque
@@ -51,7 +51,7 @@ chmod +x ~/podman/ai-stack/start.sh
 
 ### Levantar todo
 
-> **Si SS-TICKET-SYSTEM corre en Windows (Podman Desktop):**
+> **Si ticket-management-backend corre en Windows (Podman Desktop):**
 > Usar `start.sh` en lugar de `podman-compose up -d`.
 > El script detecta automáticamente la IP del host Windows y actualiza
 > el `.env` antes de levantar — funciona igual en casa y en la oficina.
@@ -407,7 +407,7 @@ podman exec -it postgres psql -U admin -d ai
 | `job_id` | Generado por el agente en cada POST `/process` | `ss_agent_runs.run_id` |
 | `ticket_id` | Generado por Postgres (SERIAL) | `ss_tickets.id` |
 | `conversation_id` | Viene de Outlook vía Power Automate | `ss_tickets.conversation_id` |
-| `external_ticket_id` | UUID devuelto por SS-TICKET-SYSTEM | `ss_tickets.external_ticket_id` |
+| `external_ticket_id` | UUID devuelto por ticket-management-backend | `ss_tickets.external_ticket_id` |
 
 ### Consultas de operación
 

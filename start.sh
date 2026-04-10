@@ -3,7 +3,7 @@
 # start.sh — Arranque del stack con IP dinámica de Windows
 # Uso: ~/podman/ai-stack/start.sh
 #
-# Necesario cuando SS-TICKET-SYSTEM corre en Windows (Podman Desktop).
+# Necesario cuando ticket-management-backend corre en Windows (Podman Desktop).
 # La IP del host Windows cambia entre redes y reinicios de WSL.
 # Este script la detecta y actualiza el .env antes de levantar el stack.
 # =============================================================================

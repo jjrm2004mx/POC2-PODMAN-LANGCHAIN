@@ -326,7 +326,7 @@ services:
 networks:
   ai-network:
     driver: bridge
-  # Red compartida con SS-TICKET-SYSTEM
+  # Red compartida con ticket-management-backend
   # Crear una vez en Podman antes de levantar ambos stacks:
   #   podman network create shared-network
   shared-network:

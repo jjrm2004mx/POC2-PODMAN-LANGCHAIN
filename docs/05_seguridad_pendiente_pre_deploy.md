@@ -14,7 +14,7 @@
 @app.post("/process", ...)       # sin validación de API key
 @app.get("/status/{job_id}", ...) # sin validación de API key
 ```
-**Acción:** Agregar validación de `X-Api-Key` en header, usando el mismo patrón que ya existe para llamar a SS-TICKET-SYSTEM. Definir la key en `.env` como `AGENT_API_KEY`.
+**Acción:** Agregar validación de `X-Api-Key` en header, usando el mismo patrón que ya existe para llamar a ticket-management-backend. Definir la key en `.env` como `AGENT_API_KEY`.
 
 ---
 

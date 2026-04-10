@@ -63,7 +63,7 @@ class JobStatusResponse(BaseModel):
     ticket_id: Optional[int] = None
     ticket_id_existente: Optional[int] = None  # Solo en status=ignorado
     motivo: Optional[str] = None               # Solo en status=ignorado
-    external_ticket_id: Optional[str] = None   # UUID en SS-TICKET-SYSTEM
+    external_ticket_id: Optional[str] = None   # UUID en ticket-management-backend
     dominio: Optional[str] = None
     categoria: Optional[str] = None
     categoria_propuesta: Optional[str] = None
