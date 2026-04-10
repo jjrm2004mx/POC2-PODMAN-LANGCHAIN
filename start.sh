@@ -23,10 +23,10 @@ fi
 
 echo "[start.sh] IP del host Windows: $WSL_HOST_IP"
 
-# Actualizar SS_TICKET_API_URL en .env con la IP actual
-sed -i "s|^SS_TICKET_API_URL=.*|SS_TICKET_API_URL=http://$WSL_HOST_IP:8080/api/v1|" "$ENV_FILE"
+# Actualizar TICKET_MGMT_API_URL en .env con la IP actual
+sed -i "s|^TICKET_MGMT_API_URL=.*|TICKET_MGMT_API_URL=http://$WSL_HOST_IP:8080/api/v1|" "$ENV_FILE"
 
-echo "[start.sh] SS_TICKET_API_URL actualizado: http://$WSL_HOST_IP:8080/api/v1"
+echo "[start.sh] TICKET_MGMT_API_URL actualizado: http://$WSL_HOST_IP:8080/api/v1"
 
 # Levantar el stack forzando recreación para que tome los nuevos env vars
 cd "$STACK_DIR"

@@ -55,9 +55,9 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
-      - SS_TICKET_API_URL=${SS_TICKET_API_URL}  # Requerido — definir en .env (ver env.txt)
-      - SS_TICKET_API_KEY=${SS_TICKET_API_KEY:-change-this-secret-key-in-production}
-      - SS_TICKET_CATALOGO_ENABLED=${SS_TICKET_CATALOGO_ENABLED:-true}
+      - TICKET_MGMT_API_URL=${TICKET_MGMT_API_URL}  # Requerido — definir en .env (ver env.txt)
+      - TICKET_MGMT_API_KEY=${TICKET_MGMT_API_KEY:-change-this-secret-key-in-production}
+      - TICKET_MGMT_CATALOGO_ENABLED=${TICKET_MGMT_CATALOGO_ENABLED:-true}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:

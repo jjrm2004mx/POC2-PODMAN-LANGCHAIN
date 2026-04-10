@@ -33,8 +33,8 @@ def _cargar_catalogo_remoto() -> bool:
     Retorna True si cargó correctamente, False si usó fallback.
     """
     global _catalogo, AGENT_DOMAINS
-    url = f"{os.getenv('SS_TICKET_API_URL')}/internal/classifications/active"
-    api_key = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
+    url = f"{os.getenv('TICKET_MGMT_API_URL')}/internal/classifications/active"
+    api_key = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
     try:
         import httpx as _httpx
         resp = _httpx.get(url, headers={"X-Api-Key": api_key}, timeout=3.0)
@@ -63,7 +63,7 @@ def _get_categorias(dominio: str) -> list:
     return [c.strip().lower() for c in raw.split(",") if c.strip()] if raw else []
 
 # Intentar cargar catálogo al importar el módulo (arranque del agente)
-if os.getenv("SS_TICKET_CATALOGO_ENABLED", "true").lower() == "true":
+if os.getenv("TICKET_MGMT_CATALOGO_ENABLED", "true").lower() == "true":
     _cargar_catalogo_remoto()
 else:
     print("[CATALOGO] Deshabilitado — usando .env como fuente de catálogo", flush=True)
@@ -93,8 +93,8 @@ def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     # Categoría desconocida → marcar para revisión
     return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
-SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL")
-SS_TICKET_API_KEY = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
+TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
+TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
 DATABASE_URL = (
     f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
     f":{os.getenv('POSTGRES_PASSWORD', 'admin')}"
@@ -222,7 +222,7 @@ async def classify_node(state: AgentState) -> AgentState:
     # Si el catálogo no cargó al arranque, reintentarlo ahora que SS-TICKET
     # ya debería estar disponible. Sin catálogo, el LLM usaría nombres del
     # .env que SS-TICKET no reconoce → tickets creados como otro/general.
-    if not _catalogo and os.getenv("SS_TICKET_CATALOGO_ENABLED", "true").lower() == "true":
+    if not _catalogo and os.getenv("TICKET_MGMT_CATALOGO_ENABLED", "true").lower() == "true":
         if _cargar_catalogo_remoto():
             print("[CATALOGO] Recargado exitosamente en classify_node", flush=True)
         else:
@@ -407,14 +407,14 @@ async def save_node(state: AgentState) -> AgentState:
             files_ss.append(("anexos", (nombre, contenido, tipo)))
 
         print(
-            f"[SS-TICKET REQUEST] URL={SS_TICKET_API_URL}/internal/tickets "
+            f"[TICKET-MGMT REQUEST] URL={TICKET_MGMT_API_URL}/internal/tickets "
             f"data={data_ss} adjuntos={len(files_ss)}",
             flush=True,
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{SS_TICKET_API_URL}/internal/tickets",
-                headers={"X-Api-Key": SS_TICKET_API_KEY},
+                f"{TICKET_MGMT_API_URL}/internal/tickets",
+                headers={"X-Api-Key": TICKET_MGMT_API_KEY},
                 data=data_ss,
                 **({"files": files_ss} if files_ss else {}),
             )
@@ -445,7 +445,7 @@ async def save_node(state: AgentState) -> AgentState:
 
     except Exception as e:
         # El ticket ya está en nuestra BD — el error externo no es bloqueante
-        print(f"[WARN SS-TICKET] No se pudo crear en ticket-management-backend: {type(e).__name__}: {repr(e)}", flush=True)
+        print(f"[WARN TICKET-MGMT] No se pudo crear en ticket-management-backend: {type(e).__name__}: {repr(e)}", flush=True)
         state.classification["external_ticket_id"] = None
 
     return state

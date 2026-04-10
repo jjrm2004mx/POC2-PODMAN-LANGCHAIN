@@ -22,7 +22,7 @@
 
 **Dónde:** `langchain-agent/agent.py` líneas 97–100
 ```python
-SS_TICKET_API_KEY = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
+TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "admin")   # via DATABASE_URL
 MINIO_SECRET_KEY  = os.getenv("MINIO_SECRET_KEY", "minioadmin123")  # en docker-compose.yml
 ```
