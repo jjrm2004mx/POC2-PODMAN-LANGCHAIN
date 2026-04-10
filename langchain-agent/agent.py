@@ -33,7 +33,7 @@ def _cargar_catalogo_remoto() -> bool:
     Retorna True si cargó correctamente, False si usó fallback.
     """
     global _catalogo, AGENT_DOMAINS
-    url = f"{os.getenv('SS_TICKET_API_URL', 'http://ss-ticket-backend:8080/api/v1')}/internal/classifications/active"
+    url = f"{os.getenv('SS_TICKET_API_URL', 'http://ticket-management-backend:8080/api/v1')}/internal/classifications/active"
     api_key = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
     try:
         import httpx as _httpx
@@ -93,7 +93,7 @@ def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     # Categoría desconocida → marcar para revisión
     return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
-SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL", "http://ss-ticket-backend:8080/api/v1")
+SS_TICKET_API_URL = os.getenv("SS_TICKET_API_URL", "http://ticket-management-backend:8080/api/v1")
 SS_TICKET_API_KEY = os.getenv("SS_TICKET_API_KEY", "change-this-secret-key-in-production")
 DATABASE_URL = (
     f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
@@ -445,7 +445,7 @@ async def save_node(state: AgentState) -> AgentState:
 
     except Exception as e:
         # El ticket ya está en nuestra BD — el error externo no es bloqueante
-        print(f"[WARN SS-TICKET] No se pudo crear en SS-TICKET-SYSTEM: {e}", flush=True)
+        print(f"[WARN SS-TICKET] No se pudo crear en SS-TICKET-SYSTEM: {type(e).__name__}: {repr(e)}", flush=True)
         state.classification["external_ticket_id"] = None
 
     return state
