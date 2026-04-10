@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL
+from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL, enrich_ticket
 
 app = FastAPI(
     title="shared-services-classifier — Agent",
@@ -61,8 +61,10 @@ class JobStatusResponse(BaseModel):
     nombre_remitente: Optional[str] = None
     conversation_id: Optional[str] = None
     ticket_id: Optional[int] = None
-    ticket_id_existente: Optional[int] = None  # Solo en status=ignorado
-    motivo: Optional[str] = None               # Solo en status=ignorado
+    ticket_id_existente: Optional[int] = None  # Solo en status=ignorado / enriquecido
+    motivo: Optional[str] = None               # Solo en status=ignorado / enriquecido
+    comment_id: Optional[str] = None           # Solo en status=enriquecido
+    adjuntos_agregados: Optional[int] = None   # Solo en status=enriquecido
     external_ticket_id: Optional[str] = None   # UUID en ticket-management-backend
     dominio: Optional[str] = None
     categoria: Optional[str] = None
@@ -90,32 +92,80 @@ async def process_email_job(job_id: str, request: ProcessRequest):
     start_time = time.time()
     run_id = job_id
 
-    # ─── DEDUPLICACIÓN: ignorar si ya existe un ticket para este hilo ─────────
+    # ─── DEDUPLICACIÓN: enriquecer si ya existe un ticket para este hilo ──────
     if request.conversation_id:
         try:
             conn = await asyncpg.connect(DATABASE_URL)
             try:
-                ticket_existente = await conn.fetchval(
-                    "SELECT id FROM ss_tickets WHERE conversation_id = $1",
+                row = await conn.fetchrow(
+                    "SELECT id, external_ticket_id, asunto, dominio, categoria "
+                    "FROM ss_tickets WHERE conversation_id = $1",
                     request.conversation_id,
                 )
             finally:
                 await conn.close()
 
-            if ticket_existente:
+            if row:
+                ticket_id_local    = row["id"]
+                external_ticket_id = row["external_ticket_id"]
                 print(
                     f"[DEDUP] conversation_id={request.conversation_id} "
-                    f"ya tiene ticket_id={ticket_existente} — ignorando",
+                    f"ya tiene ticket_id={ticket_id_local} — evaluando enriquecimiento",
                     flush=True,
                 )
+
+                enrich_result = {"relevante": False, "razon": "sin external_ticket_id", "comment_id": None, "adjuntos_agregados": 0}
+                if external_ticket_id:
+                    enrich_result = await enrich_ticket(
+                        external_ticket_id=external_ticket_id,
+                        ticket_id_local=ticket_id_local,
+                        ticket_asunto_original=row["asunto"] or "",
+                        ticket_dominio=row["dominio"] or "",
+                        ticket_categoria=row["categoria"] or "",
+                        asunto=request.asunto,
+                        cuerpo=request.cuerpo,
+                        remitente=request.remitente,
+                        nombre_remitente=request.nombre_remitente,
+                        adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
+                        provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
+                    )
+
+                # Auditoría local en ss_enrichments
+                try:
+                    conn = await asyncpg.connect(DATABASE_URL)
+                    try:
+                        await conn.execute(
+                            """INSERT INTO ss_enrichments
+                               (ticket_id, conversation_id, remitente, nombre_remitente,
+                                relevante, razon, comment_id, adjuntos_agregados)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+                            ticket_id_local,
+                            request.conversation_id,
+                            request.remitente,
+                            request.nombre_remitente,
+                            enrich_result["relevante"],
+                            enrich_result.get("razon"),
+                            enrich_result.get("comment_id"),
+                            enrich_result.get("adjuntos_agregados", 0),
+                        )
+                    finally:
+                        await conn.close()
+                except Exception as e:
+                    print(f"[WARN ss_enrichments] {e}", flush=True)
+
+                status = "enriquecido" if enrich_result["relevante"] else "ignorado"
+                motivo = enrich_result.get("razon") or "respuesta a cadena existente sin información nueva"
                 await redis_client.setex(
                     f"job:{job_id}",
                     JOB_TTL_SECONDS,
                     json.dumps({
-                        "status": "ignorado",
-                        "motivo": "respuesta a cadena existente",
-                        "ticket_id_existente": ticket_existente,
-                        "conversation_id": request.conversation_id,
+                        "status":              status,
+                        "motivo":              motivo,
+                        "ticket_id_existente": ticket_id_local,
+                        "external_ticket_id":  external_ticket_id,
+                        "conversation_id":     request.conversation_id,
+                        "comment_id":          enrich_result.get("comment_id"),
+                        "adjuntos_agregados":  enrich_result.get("adjuntos_agregados", 0),
                     }),
                 )
                 return

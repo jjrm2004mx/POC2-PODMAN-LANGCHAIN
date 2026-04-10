@@ -513,6 +513,156 @@ def should_retry(state: AgentState) -> str:
 
     return "save"
 
+# =============================================================================
+# ENRIQUECIMIENTO DE HILO — llamado desde main.py cuando DEDUP detecta
+# una respuesta al hilo de un ticket ya existente.
+# Evalúa con LLM si el mensaje aporta información relevante y, si es así,
+# agrega un comentario y/o adjuntos al ticket en ticket-management-backend.
+# =============================================================================
+
+async def enrich_ticket(
+    *,
+    external_ticket_id: str,
+    ticket_id_local: int,
+    ticket_asunto_original: str,
+    ticket_dominio: str,
+    ticket_categoria: str,
+    asunto: str,
+    cuerpo: str,
+    remitente: Optional[str],
+    nombre_remitente: Optional[str],
+    adjuntos: List[dict],
+    provider: str = "ollama",
+) -> dict:
+    """
+    Retorna: {relevante, razon, comment_id, adjuntos_agregados}
+    """
+    # ─── MOCK ────────────────────────────────────────────────────────────────
+    if AGENT_MOCK_CLASSIFY:
+        print("[MOCK] enrich_ticket — saltando LLM, usando enriquecimiento fijo", flush=True)
+        llm_result = {
+            "relevante": True,
+            "razon": "mock",
+            "resumen": f"{nombre_remitente or 'Remitente'} envió información adicional relevante (mock).",
+        }
+    else:
+        # ─── LLM: evaluar relevancia ─────────────────────────────────────────
+        adjuntos_str = (
+            ", ".join(f"{a.get('nombre')} ({a.get('tipo', 'desconocido')})" for a in adjuntos)
+            if adjuntos else "ninguno"
+        )
+
+        system_enrich = """Eres un evaluador de enriquecimiento de tickets de soporte.
+Determina si un mensaje de respuesta al hilo aporta información relevante al ticket existente.
+
+RESPONDE SOLO CON JSON VÁLIDO. SIN MARKDOWN. SIN BACKTICKS.
+{"relevante": true/false, "razon": "justificación breve", "resumen": "resumen en tercera persona comenzando con el nombre del remitente (solo si relevante, si no: null)"}
+
+RELEVANTE si contiene:
+- Adjuntos nuevos (logs, capturas, documentos, reportes)
+- Información adicional del problema (pasos, contexto, datos técnicos)
+- Correcciones o aclaraciones a la descripción original
+- Urgencia adicional o impacto no mencionado antes
+
+NO RELEVANTE si es:
+- Acuse de recibo ("gracias", "ok", "recibido", "entendido")
+- Solo saludos o mensajes vacíos
+- Confirmaciones sin información nueva"""
+
+        user_enrich = f"""TICKET EXISTENTE:
+Asunto: {ticket_asunto_original}
+Dominio: {ticket_dominio} / Categoría: {ticket_categoria}
+
+RESPUESTA AL HILO:
+Remitente: {nombre_remitente or "desconocido"} <{remitente or ""}>
+Asunto: {asunto}
+Adjuntos: {adjuntos_str}
+
+Mensaje:
+{cuerpo}"""
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{LANGCHAIN_API_URL}/ask",
+                    json={"prompt": user_enrich, "system": system_enrich, "provider": provider},
+                )
+                response.raise_for_status()
+
+            raw = response.json().get("response", "").strip()
+            idx_start = raw.find("{")
+            idx_end   = raw.rfind("}")
+            if idx_start >= 0 and idx_end > idx_start:
+                raw = raw[idx_start:idx_end + 1]
+            llm_result = json.loads(raw)
+            print(f"[ENRICH] LLM result: relevante={llm_result.get('relevante')} razon={llm_result.get('razon')}", flush=True)
+
+        except Exception as e:
+            print(f"[WARN enrich_ticket] Error en evaluación LLM: {e}", flush=True)
+            return {"relevante": False, "razon": f"error LLM: {e}", "comment_id": None, "adjuntos_agregados": 0}
+
+    if not llm_result.get("relevante"):
+        return {"relevante": False, "razon": llm_result.get("razon"), "comment_id": None, "adjuntos_agregados": 0}
+
+    # ─── RELEVANTE: enriquecer ticket en ticket-management-backend ────────────
+    nombre  = nombre_remitente or "Remitente"
+    email   = remitente or ""
+    resumen = llm_result.get("resumen") or f"{nombre} envió información adicional al hilo del ticket."
+    texto_comentario = f"{nombre} <{email}> {resumen}" if email else f"{nombre} {resumen}"
+
+    comment_id        = None
+    adjuntos_agregados = 0
+
+    # Paso 1 — comentario
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{TICKET_MGMT_API_URL}/internal/tickets/{external_ticket_id}/comments",
+                headers={"X-Api-Key": TICKET_MGMT_API_KEY},
+                json={"texto": texto_comentario, "autor": "langchain-agent", "origen": "enrichment"},
+            )
+            resp.raise_for_status()
+            comment_id = resp.json().get("commentId")
+            print(f"[ENRICH] Comentario agregado commentId={comment_id}", flush=True)
+    except Exception as e:
+        print(f"[WARN enrich_ticket] Error agregando comentario: {e}", flush=True)
+
+    # Paso 2 — adjuntos (si los hay)
+    if adjuntos:
+        try:
+            files_ss = []
+            for adj in adjuntos:
+                nombre_adj = adj.get("nombre", "adjunto")
+                tipo       = adj.get("tipo") or "application/octet-stream"
+                b64        = adj.get("contenido_b64") or ""
+                try:
+                    contenido = base64.b64decode(b64) if b64 else b""
+                except Exception:
+                    contenido = b""
+                if not contenido:
+                    contenido = f"[ARCHIVO DE PRUEBA] {nombre_adj}".encode()
+                files_ss.append(("anexos", (nombre_adj, contenido, tipo)))
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{TICKET_MGMT_API_URL}/internal/tickets/{external_ticket_id}/attachments",
+                    headers={"X-Api-Key": TICKET_MGMT_API_KEY},
+                    files=files_ss,
+                )
+                resp.raise_for_status()
+                adjuntos_agregados = len(resp.json().get("adjuntosAgregados", []))
+                print(f"[ENRICH] {adjuntos_agregados} adjunto(s) agregado(s)", flush=True)
+        except Exception as e:
+            print(f"[WARN enrich_ticket] Error agregando adjuntos: {e}", flush=True)
+
+    return {
+        "relevante":          True,
+        "razon":              llm_result.get("razon"),
+        "comment_id":         comment_id,
+        "adjuntos_agregados": adjuntos_agregados,
+    }
+
+
 workflow = StateGraph(AgentState)
 workflow.add_node("classify", classify_node)
 workflow.add_node("validate", validate_node)
