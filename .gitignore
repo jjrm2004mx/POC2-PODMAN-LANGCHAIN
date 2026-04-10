@@ -5,6 +5,10 @@ grafana_data/
 n8n_data/
 redis_data/
 loki_data/
+minio_data/
+
+# Resultados de pruebas
+test_results_*.json
 
 # Variables de entorno
 .env
