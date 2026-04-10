@@ -93,6 +93,7 @@ def fuzzy_match_categoria(categoria: str, dominio: str) -> tuple:
     # Categoría desconocida → marcar para revisión
     return categoria, categoria, True
 LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
+AGENT_MOCK_CLASSIFY = os.getenv("AGENT_MOCK_CLASSIFY", "false").lower() == "true"
 TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
 TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
 DATABASE_URL = (
@@ -227,6 +228,17 @@ async def classify_node(state: AgentState) -> AgentState:
             print("[CATALOGO] Recargado exitosamente en classify_node", flush=True)
         else:
             print("[CATALOGO] Sigue sin disponible en classify_node — usando .env fallback", flush=True)
+
+    if AGENT_MOCK_CLASSIFY:
+        print("[MOCK] classify_node — saltando LLM, usando clasificación fija", flush=True)
+        state.classification = {
+            "dominio":    os.getenv("MOCK_DOMINIO",   "IT"),
+            "categoria":  os.getenv("MOCK_CATEGORIA", "acceso"),
+            "prioridad":  os.getenv("MOCK_PRIORIDAD", "BAJA"),
+            "confianza":  float(os.getenv("MOCK_CONFIANZA", "1.0")),
+        }
+        state.iterations += 1
+        return state
 
     try:
         prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {state.cuerpo}"
