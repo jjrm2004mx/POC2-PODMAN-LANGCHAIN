@@ -63,6 +63,7 @@ services:
       - MOCK_CATEGORIA=${MOCK_CATEGORIA:-acceso}
       - MOCK_PRIORIDAD=${MOCK_PRIORIDAD:-BAJA}
       - MOCK_CONFIANZA=${MOCK_CONFIANZA:-1.0}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-420}
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:

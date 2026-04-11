@@ -24,6 +24,7 @@ LANGCHAIN_API_URL   = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000"
 AGENT_MOCK_CLASSIFY = os.getenv("AGENT_MOCK_CLASSIFY", "false").lower() == "true"
 TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
 TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
+LLM_TIMEOUT         = float(os.getenv("LLM_TIMEOUT", "420"))
 
 # =============================================================================
 # ClasificacionSchema — validación Pydantic de la salida del LLM

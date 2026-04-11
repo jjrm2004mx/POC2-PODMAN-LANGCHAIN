@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from agent.state import (
     AgentState, ClasificacionSchema,
-    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, MIN_CONFIDENCE,
+    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, MIN_CONFIDENCE, LLM_TIMEOUT,
 )
 from agent.catalog import _cargar_catalogo_remoto, _catalogo
 from agent.prompts import build_system_prompt, SYSTEM_ENRICH
@@ -45,7 +45,7 @@ async def classify_node(state: AgentState) -> AgentState:
                 "Debes corregir y responder SOLO con JSON válido usando las categorías listadas."
             )
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
+        async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
             response = await client.post(
                 f"{LANGCHAIN_API_URL}/ask",
                 json={
@@ -244,7 +244,7 @@ Mensaje:
 {cuerpo}"""
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
                 response = await client.post(
                     f"{LANGCHAIN_API_URL}/ask",
                     json={"prompt": user_enrich, "system": SYSTEM_ENRICH, "provider": provider},
@@ -268,7 +268,11 @@ Mensaje:
 
     nombre  = nombre_remitente or "Remitente"
     email   = remitente or ""
-    resumen = llm_result.get("resumen") or f"{nombre} envió información adicional al hilo del ticket."
+    resumen = llm_result.get("resumen")
+    if not resumen:
+        # El LLM no generó resumen — usar el cuerpo del email truncado como respaldo
+        cuerpo_corto = (cuerpo[:300] + "…") if len(cuerpo) > 300 else cuerpo
+        resumen = f"Información adicional recibida: {cuerpo_corto}"
     texto_comentario = f"{nombre} <{email}> {resumen}" if email else f"{nombre} {resumen}"
 
     comment_id         = None
