@@ -260,8 +260,8 @@ Mensaje:
             print(f"[ENRICH] LLM result: relevante={llm_result.get('relevante')} razon={llm_result.get('razon')}", flush=True)
 
         except Exception as e:
-            print(f"[WARN enrich_ticket] Error en evaluación LLM: {e}", flush=True)
-            return {"relevante": False, "razon": f"error LLM: {e}", "comment_id": None, "adjuntos_agregados": 0}
+            print(f"[WARN enrich_ticket] Error en evaluación LLM: {repr(e)}", flush=True)
+            return {"relevante": False, "razon": f"error LLM: {repr(e)}", "comment_id": None, "adjuntos_agregados": 0}
 
     if not llm_result.get("relevante"):
         return {"relevante": False, "razon": llm_result.get("razon"), "comment_id": None, "adjuntos_agregados": 0}
