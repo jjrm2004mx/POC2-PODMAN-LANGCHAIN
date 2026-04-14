@@ -103,6 +103,10 @@ async def add_comment(
             headers=_headers(),
             json={"texto": texto, "autor": autor, "origen": origen},
         )
+        print(
+            f"[COMMENT RESPONSE] ticketId={external_ticket_id} status={resp.status_code} body={resp.text}",
+            flush=True, file=sys.stdout,
+        )
         resp.raise_for_status()
         comment_id = resp.json().get("commentId")
         print(f"[ENRICH] Comentario agregado commentId={comment_id}", flush=True, file=sys.stdout)

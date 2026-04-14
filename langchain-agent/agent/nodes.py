@@ -288,8 +288,14 @@ Mensaje:
             external_ticket_id=external_ticket_id,
             texto=texto_comentario,
         )
+    except httpx.HTTPStatusError as e:
+        print(
+            f"[WARN enrich_ticket] Error agregando comentario: "
+            f"HTTP {e.response.status_code} — {e.response.text}",
+            flush=True,
+        )
     except Exception as e:
-        print(f"[WARN enrich_ticket] Error agregando comentario: {e}", flush=True)
+        print(f"[WARN enrich_ticket] Error agregando comentario: {repr(e)}", flush=True)
 
     if adjuntos:
         try:
