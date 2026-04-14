@@ -10,11 +10,12 @@ from agent.nodes import classify_node, validate_node, save_node
 def should_retry(state: AgentState) -> str:
     """
     Lógica de reintentos:
-    - Iteraciones agotadas              → save (FALLBACK)
-    - Sin clasificación válida          → classify
-    - Categoría no reconocida           → classify con feedback
-    - Confianza menor a MIN_CONFIDENCE  → classify con feedback
-    - Todo OK                           → save
+    - Iteraciones agotadas                                    → save (FALLBACK)
+    - Sin clasificación válida                                → classify
+    - Categoría no reconocida + confianza suficiente          → save (warning, categoryResolved=false es OK)
+    - Categoría no reconocida + confianza baja                → classify con feedback
+    - Confianza menor a MIN_CONFIDENCE                        → classify con feedback
+    - Todo OK                                                 → save
     """
     from agent.catalog import _get_categorias
 
@@ -29,6 +30,19 @@ def should_retry(state: AgentState) -> str:
     categoria         = state.classification.get("categoria", "")
     confianza         = float(state.classification.get("confianza", 0.0))
     requiere_revision = state.classification.get("requiere_revision", False)
+
+    # Categoría fuera de catálogo con confianza suficiente → no reintentar,
+    # el ticket se crea con categoryResolved=false (comportamiento esperado).
+    if requiere_revision and confianza >= MIN_CONFIDENCE:
+        cats     = _get_categorias(dominio)
+        cats_str = ", ".join(cats) if cats else "ninguna configurada"
+        print(
+            f"[WARN] categoría '{categoria}' no reconocida para dominio '{dominio}' "
+            f"(confianza={confianza:.2f}). Categorías válidas: {cats_str}. "
+            f"Se enviará a save con requiere_revision=True.",
+            flush=True,
+        )
+        return "save"
 
     motivos = []
 
