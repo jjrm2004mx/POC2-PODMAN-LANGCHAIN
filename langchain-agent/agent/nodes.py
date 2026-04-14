@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from agent.state import (
     AgentState, ClasificacionSchema,
-    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, MIN_CONFIDENCE, LLM_TIMEOUT,
+    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, MIN_CONFIDENCE, LLM_TIMEOUT, ENRICH_LLM_TIMEOUT,
 )
 from agent.catalog import _cargar_catalogo_remoto, _catalogo
 from agent.prompts import build_system_prompt, SYSTEM_ENRICH
@@ -244,7 +244,7 @@ Mensaje:
 {cuerpo}"""
 
         try:
-            async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=ENRICH_LLM_TIMEOUT) as client:
                 response = await client.post(
                     f"{LANGCHAIN_API_URL}/ask",
                     json={"prompt": user_enrich, "system": SYSTEM_ENRICH, "provider": provider},
@@ -258,6 +258,11 @@ Mensaje:
                 raw = raw[idx_start:idx_end + 1]
             llm_result = json.loads(raw)
             print(f"[ENRICH] LLM result: relevante={llm_result.get('relevante')} razon={llm_result.get('razon')}", flush=True)
+
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException) as e:
+            # Error transitorio de red — asumir relevante para no perder la actualización del ticket
+            print(f"[WARN enrich_ticket] Timeout LLM ({repr(e)}), se asume relevante y se continúa.", flush=True)
+            llm_result = {"relevante": True, "razon": f"timeout LLM: {repr(e)}", "resumen": None}
 
         except Exception as e:
             print(f"[WARN enrich_ticket] Error en evaluación LLM: {repr(e)}", flush=True)
