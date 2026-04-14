@@ -2,7 +2,7 @@ import sys
 import base64
 import httpx
 from typing import Optional, List
-from agent.state import TICKET_MGMT_API_URL, TICKET_MGMT_API_KEY
+from agent.state import TICKET_MGMT_API_URL, TICKET_MGMT_API_KEY, TICKET_MGMT_TIMEOUT
 
 # =============================================================================
 # Cliente HTTP para ticket-management-backend
@@ -66,7 +66,7 @@ async def create_ticket(
         flush=True, file=sys.stdout,
     )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=TICKET_MGMT_TIMEOUT) as client:
         resp = await client.post(
             f"{TICKET_MGMT_API_URL}/internal/tickets",
             headers=_headers(),
@@ -97,7 +97,7 @@ async def add_comment(
     Agrega un comentario a un ticket existente.
     Retorna el commentId (UUID) o None si falla.
     """
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=TICKET_MGMT_TIMEOUT) as client:
         resp = await client.post(
             f"{TICKET_MGMT_API_URL}/internal/tickets/{external_ticket_id}/comments",
             headers=_headers(),
@@ -135,7 +135,7 @@ async def add_attachments(
             contenido = f"[ARCHIVO DE PRUEBA] {nombre}".encode()
         files_ss.append(("anexos", (nombre, contenido, tipo)))
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=TICKET_MGMT_TIMEOUT) as client:
         resp = await client.post(
             f"{TICKET_MGMT_API_URL}/internal/tickets/{external_ticket_id}/attachments",
             headers=_headers(),

@@ -26,6 +26,7 @@ TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
 TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
 LLM_TIMEOUT         = float(os.getenv("LLM_TIMEOUT", "420"))
 ENRICH_LLM_TIMEOUT  = float(os.getenv("ENRICH_LLM_TIMEOUT", "900"))  # enrich puede tardar más (llama3 ~720s observado)
+TICKET_MGMT_TIMEOUT = float(os.getenv("TICKET_MGMT_TIMEOUT", "60"))   # creación/comentarios en ticket-management-backend
 
 # =============================================================================
 # ClasificacionSchema — validación Pydantic de la salida del LLM
