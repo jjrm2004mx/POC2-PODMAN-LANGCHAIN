@@ -112,9 +112,16 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             if dedup_row:
                 email_type = "reply"
 
+        if email_type == "duplicado":
+            dedup_reason = f"email_id={request.id} ya existe en ss_tickets (ticket_id={dedup_row['id']})"
+        elif email_type == "reply":
+            dedup_reason = f"threadId={request.threadId} ya tiene ticket_id={dedup_row['id']} → se enriquecerá"
+        else:
+            dedup_reason = "email_id y threadId no encontrados en ss_tickets → correo nuevo"
         print(
-            f"[DEDUP] email_type={email_type} "
-            f"email_id={request.id} thread_id={request.threadId}",
+            f"[DEDUP] email_type={email_type} | "
+            f"id={request.id} | threadId={request.threadId} | "
+            f"razon={dedup_reason}",
             flush=True,
         )
     except Exception as e:

@@ -257,7 +257,11 @@ Mensaje:
             if idx_start >= 0 and idx_end > idx_start:
                 raw = raw[idx_start:idx_end + 1]
             llm_result = json.loads(raw)
-            print(f"[ENRICH] LLM result: relevante={llm_result.get('relevante')} razon={llm_result.get('razon')}", flush=True)
+            print(
+                f"[ENRICH] LLM result: relevante={llm_result.get('relevante')} razon={llm_result.get('razon')}\n"
+                f"[ENRICH] Contenido evaluado:\n{user_enrich}",
+                flush=True,
+            )
 
         except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException) as e:
             # Error transitorio de red — asumir relevante para no perder la actualización del ticket
