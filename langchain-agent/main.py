@@ -10,7 +10,7 @@ from typing import Optional, List
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL, enrich_ticket
-from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, insert_enrichment
+from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, get_ticket_by_references, insert_enrichment
 
 app = FastAPI(
     title="shared-services-classifier — Agent",
@@ -48,6 +48,8 @@ class ProcessRequest(BaseModel):
     conversation_id: Optional[str] = None   # SMTP Message-ID — solo auditoría
     id: Optional[str] = None                # Gmail message ID — deduplicación
     threadId: Optional[str] = None          # Gmail thread ID — detección de reply
+    references: Optional[str] = None        # Gmail references header — detección de FW (string o JSON array)
+    to: Optional[str] = None                # Destinatario(s) directo(s) del correo
     fecha_correo: Optional[str] = None      # Fecha ISO del correo
     origen: Optional[str] = None            # Proveedor: gmail, outlook, etc.
     adjuntos: Optional[List[AdjuntoInfo]] = []
@@ -86,6 +88,40 @@ class JobStatusResponse(BaseModel):
     error: Optional[str] = None
 
 # =============================================================================
+# HELPERS — DEDUP
+# =============================================================================
+
+SS_EMAIL = os.getenv("SS_EMAIL", "").lower()
+
+
+def parse_references(raw) -> List[str]:
+    """Normaliza el campo references a List[str].
+    n8n puede enviar: null | "<id>" | "[\"<id1>\",\"<id2>\"]"
+    """
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [r for r in raw if r]
+    s = raw.strip()
+    if s.startswith("["):
+        try:
+            return [r for r in json.loads(s) if r]
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return [s] if s else []
+
+
+def is_ss_direct_recipient(to: Optional[str]) -> bool:
+    """Devuelve True si SS_EMAIL está en el campo To (destinatario directo de la acción).
+    Si SS está solo en CC → False (solo informado, sin acción requerida).
+    Si SS_EMAIL no está configurado → se asume directo.
+    """
+    if not SS_EMAIL:
+        return True
+    return SS_EMAIL in (to or "").lower()
+
+
+# =============================================================================
 # TAREA EN BACKGROUND
 # =============================================================================
 
@@ -112,12 +148,34 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             if dedup_row:
                 email_type = "reply"
 
+        # ── FW: hilo roto con referencias conocidas o prefijo de reenvío (solo Gmail) ──
+        if email_type == "nuevo" and request.origen == "gmail":
+            refs = parse_references(request.references)
+            _fw_prefixes = ("fw:", "fwd:", "rv:", "re:", "fw ", "rv ", "fwd ")
+            has_fw_prefix = (request.asunto or "").lower().startswith(_fw_prefixes)
+            ss_directo    = is_ss_direct_recipient(request.to)
+
+            if refs:
+                # FW con referencias — buscar ticket vinculado en DB
+                dedup_row = await get_ticket_by_references(refs)
+                if dedup_row:
+                    email_type = "forward_linked" if ss_directo else "forward_cc"
+            elif has_fw_prefix and not ss_directo:
+                # FW sin referencias pero SS solo en CC → conversación usuario-a-usuario
+                email_type = "forward_cc"
+
         if email_type == "duplicado":
             dedup_reason = f"email_id={request.id} ya existe en ss_tickets (ticket_id={dedup_row['id']})"
         elif email_type == "reply":
             dedup_reason = f"threadId={request.threadId} ya tiene ticket_id={dedup_row['id']} → se enriquecerá"
+        elif email_type == "forward_linked":
+            dedup_reason = f"references vinculan a ticket_id={dedup_row['id']} y SS es destinatario directo → evaluando enriquecimiento"
+        elif email_type == "forward_cc" and dedup_row:
+            dedup_reason = f"references vinculan a ticket_id={dedup_row['id']} pero SS solo está en CC → ignorado"
+        elif email_type == "forward_cc":
+            dedup_reason = f"prefijo FW/RV en asunto y SS solo en CC → conversación usuario-a-usuario, ignorado"
         else:
-            dedup_reason = "email_id y threadId no encontrados en ss_tickets → correo nuevo"
+            dedup_reason = "sin match en ss_tickets → correo nuevo"
         print(
             f"[DEDUP] email_type={email_type} | "
             f"id={request.id} | threadId={request.threadId} | "
@@ -188,6 +246,83 @@ async def process_email_job(job_id: str, request: ProcessRequest):
 
         status = "enriquecido" if enrich_result["relevante"] else "ignorado"
         motivo = enrich_result.get("razon") or "respuesta a cadena existente sin información nueva"
+        await redis_client.setex(
+            f"job:{job_id}",
+            JOB_TTL_SECONDS,
+            json.dumps({
+                "status":              status,
+                "motivo":              motivo,
+                "ticket_id_existente": ticket_id_local,
+                "external_ticket_id":  external_ticket_id,
+                "email_id":            request.id,
+                "thread_id":           request.threadId,
+                "conversation_id":     request.conversation_id,
+                "comment_id":          enrich_result.get("comment_id"),
+                "adjuntos_agregados":  enrich_result.get("adjuntos_agregados", 0),
+            }),
+        )
+        return
+
+    # ─── FORWARD_CC: SS solo en copia → sin acción ───────────────────────────
+    if email_type == "forward_cc":
+        await redis_client.setex(
+            f"job:{job_id}",
+            JOB_TTL_SECONDS,
+            json.dumps({
+                "status":              "ignorado",
+                "motivo":              "FW con SS en CC — no requiere acción",
+                "ticket_id_existente": dedup_row["id"],
+                "external_ticket_id":  dedup_row["external_ticket_id"],
+                "email_id":            request.id,
+                "thread_id":           request.threadId,
+                "conversation_id":     request.conversation_id,
+            }),
+        )
+        return
+
+    # ─── FORWARD_LINKED: FW con SS como destinatario directo → enriquecer ────
+    if email_type == "forward_linked":
+        ticket_id_local    = dedup_row["id"]
+        external_ticket_id = dedup_row["external_ticket_id"]
+        print(
+            f"[DEDUP] forward_linked → ticket_id={ticket_id_local} — evaluando enriquecimiento",
+            flush=True,
+        )
+
+        enrich_result = {"relevante": False, "razon": "sin external_ticket_id", "comment_id": None, "adjuntos_agregados": 0}
+        if external_ticket_id:
+            enrich_result = await enrich_ticket(
+                external_ticket_id=external_ticket_id,
+                ticket_id_local=ticket_id_local,
+                ticket_asunto_original=dedup_row["asunto"] or "",
+                ticket_dominio=dedup_row["dominio"] or "",
+                ticket_categoria=dedup_row["categoria"] or "",
+                asunto=request.asunto,
+                cuerpo=request.cuerpo,
+                remitente=request.remitente,
+                nombre_remitente=request.nombre_remitente,
+                adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
+                provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
+            )
+
+        try:
+            await insert_enrichment(
+                ticket_id=ticket_id_local,
+                conversation_id=request.conversation_id,
+                email_id=request.id,
+                thread_id=request.threadId,
+                remitente=request.remitente,
+                nombre_remitente=request.nombre_remitente,
+                relevante=enrich_result["relevante"],
+                razon=enrich_result.get("razon"),
+                comment_id=enrich_result.get("comment_id"),
+                adjuntos_agregados=enrich_result.get("adjuntos_agregados", 0),
+            )
+        except Exception as e:
+            print(f"[WARN ss_enrichments] {e}", flush=True)
+
+        status = "enriquecido" if enrich_result["relevante"] else "ignorado"
+        motivo = enrich_result.get("razon") or "FW sin información nueva para el ticket"
         await redis_client.setex(
             f"job:{job_id}",
             JOB_TTL_SECONDS,

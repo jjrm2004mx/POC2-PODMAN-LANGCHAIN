@@ -1,5 +1,5 @@
 import asyncpg
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone
 from agent.state import DATABASE_URL
 
@@ -28,6 +28,19 @@ async def get_ticket_by_email_id(email_id: str) -> Optional[asyncpg.Record]:
             "SELECT id, external_ticket_id, asunto, dominio, categoria "
             "FROM ss_tickets WHERE email_id = $1",
             email_id,
+        )
+    finally:
+        await conn.close()
+
+
+async def get_ticket_by_references(references: List[str]) -> Optional[asyncpg.Record]:
+    """Retorna el ticket más reciente cuyo conversation_id coincide con alguna referencia del FW."""
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        return await conn.fetchrow(
+            "SELECT id, external_ticket_id, asunto, dominio, categoria "
+            "FROM ss_tickets WHERE conversation_id = ANY($1::text[]) ORDER BY id DESC LIMIT 1",
+            references,
         )
     finally:
         await conn.close()
