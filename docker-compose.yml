@@ -190,6 +190,7 @@ services:
       start_period: 10s
     networks:
       - ai-network
+      - shared-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
