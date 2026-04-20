@@ -11,6 +11,11 @@
 # NOTA Podman rootless:
 #   Todas las imágenes usan prefijo docker.io/ explícito.
 #   Podman no asume docker.io por defecto cuando no hay registries configurados.
+#
+# OBSERVABILIDAD:
+#   Prometheus, Grafana, Loki, Promtail y Node Exporter fueron movidos a
+#   infra-monitoring (repo separado). Este stack solo expone /metrics en
+#   langchain-agent:8001 y langchain-api:8000 para que infra-monitoring scrape.
 # =============================================================================
 
 version: "3.8"
@@ -188,120 +193,6 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Prometheus
-  # Scrape cada 15s a todos los servicios con /metrics
-  # ---------------------------------------------------------------------------
-  prometheus:
-    image: docker.io/prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Grafana
-  # Dashboards: métricas Prometheus + logs Loki
-  # URL: http://localhost:3000 | Credenciales: admin / admin (o GRAFANA_PASSWORD)
-  #
-  # NOTA permisos Podman rootless:
-  #   Si grafana_data da Permission denied, ejecutar:
-  #   podman unshare chown -R 472:472 grafana_data/
-  # ---------------------------------------------------------------------------
-  grafana:
-    image: docker.io/grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-    volumes:
-      - ./grafana_data:/var/lib/grafana
-      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana-provisioning/dashboard-files:/etc/grafana/provisioning/dashboard-files:ro
-    depends_on:
-      - prometheus
-      - loki
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Node Exporter
-  # Métricas del host: CPU, RAM, disco, carga (best effort en WSL2)
-  # Especialmente útil para monitorear impacto de inferencia Ollama
-  # ---------------------------------------------------------------------------
-  node-exporter:
-    image: docker.io/prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - --path.procfs=/host/proc
-      - --path.sysfs=/host/sys
-      - --collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Loki
-  # Agrega logs de todos los contenedores Podman
-  # URL interna: loki:3100
-  # Versión 2.9.0 — misma versión que Promtail para compatibilidad garantizada
-  # ---------------------------------------------------------------------------
-  loki:
-    image: docker.io/grafana/loki:2.9.0
-    container_name: loki
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Promtail 2.9.0
-  # Lee logs desde journald (compatible WSL2 y Linux nativo)
-  # IMPORTANTE: usar versión 2.9.0 — promtail:latest (3.x) no incluye
-  # soporte para journald compilado.
-  #
-  # Volúmenes montados:
-  #   /var/log/journal  → archivos de journal persistentes
-  #   /run/log/journal  → journal en memoria (si existe)
-  #   /etc/machine-id   → identificador de máquina requerido por journald
-  #
-  # NOTA WSL2 permisos:
-  #   sudo chmod o+r /var/log/journal/<machine-id>/*.journal
-  # ---------------------------------------------------------------------------
-  promtail:
-    image: docker.io/grafana/promtail:2.9.0
-    container_name: promtail
-    volumes:
-      - /var/log/journal:/var/log/journal:ro
-      - /run/log/journal:/run/log/journal:ro
-      - /etc/machine-id:/etc/machine-id:ro
-      - ./promtail.yml:/etc/promtail/config.yml:ro
-    command: -config.file=/etc/promtail/config.yml
-    depends_on:
-      - loki
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-# =============================================================================
-# RED INTERNA
-# Red explícita para garantizar resolución de nombres estable entre reinicios
-# =============================================================================
-  # ---------------------------------------------------------------------------
   # ALMACENAMIENTO DE OBJETOS — MinIO
   # Guarda archivos adjuntos de correos (Excel, PDF, etc.)
   # API: http://localhost:9000 | Consola: http://localhost:9001
@@ -329,11 +220,14 @@ services:
       - ai-network
     restart: unless-stopped
 
+# =============================================================================
+# REDES
+# Ambas redes son externas — creadas por startup.sh antes de levantar servicios:
+#   podman network create ai-network
+#   podman network create shared-network
+# =============================================================================
 networks:
   ai-network:
-    driver: bridge
-  # Red compartida con ticket-management-backend
-  # Crear una vez en Podman antes de levantar ambos stacks:
-  #   podman network create shared-network
+    external: true
   shared-network:
     external: true
