@@ -61,6 +61,8 @@ class ClasificacionSchema(BaseModel):
     categoria:           str
     prioridad:           str
     confianza:           float
+    nombre_ticket:       Optional[str] = None
+    descripcion:         Optional[str] = None
     categoria_propuesta: Optional[str] = None
     requiere_revision:   bool = False
 

@@ -107,6 +107,8 @@ async def validate_node(state: AgentState) -> AgentState:
         state.classification["categoria"]           = validated.categoria
         state.classification["categoria_propuesta"] = validated.categoria_propuesta
         state.classification["requiere_revision"]   = validated.requiere_revision
+        state.classification["nombre_ticket"]       = validated.nombre_ticket
+        state.classification["descripcion"]         = validated.descripcion
         state.validated = True
         state.error     = None
     except Exception as e:
@@ -136,6 +138,8 @@ async def save_node(state: AgentState) -> AgentState:
     confianza           = state.classification["confianza"]
     categoria_propuesta = state.classification.get("categoria_propuesta")
     requiere_revision   = state.classification.get("requiere_revision", False)
+    nombre_ticket       = state.classification.get("nombre_ticket") or state.asunto
+    descripcion         = state.classification.get("descripcion") or state.cuerpo
 
     is_fallback = dominio == "otro" and confianza == 0.0
 
@@ -173,12 +177,14 @@ async def save_node(state: AgentState) -> AgentState:
     state.classification["alerta"]              = alerta
     state.classification["categoria_propuesta"] = categoria_propuesta
     state.classification["requiere_revision"]   = requiere_revision
+    state.classification["nombre_ticket"]       = nombre_ticket
+    state.classification["descripcion"]         = descripcion
 
     # Paso 2 — crear ticket en ticket-management-backend
     try:
         external_ticket_id = await create_ticket(
-            asunto=state.asunto,
-            cuerpo=state.cuerpo,
+            asunto=nombre_ticket,
+            cuerpo=descripcion,
             dominio=dominio,
             categoria=categoria,
             prioridad=prioridad,
