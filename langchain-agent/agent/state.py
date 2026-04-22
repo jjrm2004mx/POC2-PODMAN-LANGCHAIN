@@ -21,7 +21,8 @@ DATABASE_URL = (
 )
 
 LANGCHAIN_API_URL   = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
-AGENT_MOCK_CLASSIFY = os.getenv("AGENT_MOCK_CLASSIFY", "false").lower() == "true"
+AGENT_MOCK_CLASSIFY     = os.getenv("AGENT_MOCK_CLASSIFY", "false").lower() == "true"
+AGENT_PREPROCESS_EMAIL  = os.getenv("AGENT_PREPROCESS_EMAIL", "false").lower() == "true"
 TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
 TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
 LLM_TIMEOUT         = float(os.getenv("LLM_TIMEOUT", "420"))

@@ -1,11 +1,13 @@
 import os
+import re
 import json
 import httpx
 from typing import Optional, List
 
 from agent.state import (
     AgentState, ClasificacionSchema,
-    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, MIN_CONFIDENCE, LLM_TIMEOUT, ENRICH_LLM_TIMEOUT,
+    LANGCHAIN_API_URL, AGENT_MOCK_CLASSIFY, AGENT_PREPROCESS_EMAIL,
+    MIN_CONFIDENCE, LLM_TIMEOUT, ENRICH_LLM_TIMEOUT,
 )
 from agent.catalog import _cargar_catalogo_remoto, _catalogo
 from agent.prompts import build_system_prompt, SYSTEM_ENRICH
@@ -14,6 +16,54 @@ from db.queries import (
     insert_enrichment,
 )
 from clients.ticket_mgmt import create_ticket, add_comment, add_attachments
+
+# =============================================================================
+# Pre-procesamiento del cuerpo del correo (activado con AGENT_PREPROCESS_EMAIL=true)
+# Elimina ruido estructural del correo para reducir el contexto enviado al LLM.
+# Útil para modelos locales con capacidad de instrucción-following limitada.
+# Para modelos cloud (OpenAI, Anthropic) se recomienda desactivarlo.
+# =============================================================================
+
+# Patrones que marcan el inicio del hilo citado
+_QUOTED_THREAD_RE = re.compile(
+    r"(^|\n)(De:|From:|Enviado el:|Sent:|-----+\s*Mensaje original)",
+    re.IGNORECASE,
+)
+# Imágenes embebidas en firma (logos, banners, fotos de perfil)
+_EMBEDDED_IMAGE_RE = re.compile(
+    r"\[image:[^\]]*\]|\[Imagen quitada[^\]]*\]",
+    re.IGNORECASE,
+)
+# Links mailto y URLs entre < >
+_MAILTO_RE = re.compile(r"<mailto:[^>]+>|<https?://[^>]+>", re.IGNORECASE)
+# Avisos legales reconocibles por frases clave
+_LEGAL_DISCLAIMER_RE = re.compile(
+    r"(PROTECCIÓN DE DATOS PERSONALES|confidencial y restringida|"
+    r"La información contenida en este mensaje es confidencial)",
+    re.IGNORECASE,
+)
+
+
+def clean_email_body(cuerpo: str) -> str:
+    """Elimina ruido estructural del cuerpo del correo antes de enviarlo al LLM."""
+    # 1. Cortar en el inicio del hilo citado (conservar solo el mensaje principal)
+    match = _QUOTED_THREAD_RE.search(cuerpo)
+    if match:
+        cuerpo = cuerpo[:match.start()].strip()
+
+    # 2. Eliminar imágenes embebidas de firma
+    cuerpo = _EMBEDDED_IMAGE_RE.sub("", cuerpo)
+
+    # 3. Eliminar links mailto y URLs entre < >
+    cuerpo = _MAILTO_RE.sub("", cuerpo)
+
+    # 4. Cortar aviso legal si quedó en el mensaje principal
+    match_legal = _LEGAL_DISCLAIMER_RE.search(cuerpo)
+    if match_legal:
+        cuerpo = cuerpo[:match_legal.start()].strip()
+
+    return cuerpo.strip()
+
 
 # =============================================================================
 # Nodos del grafo LangGraph
@@ -38,7 +88,10 @@ async def classify_node(state: AgentState) -> AgentState:
         return state
 
     try:
-        prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {state.cuerpo}"
+        cuerpo_llm = clean_email_body(state.cuerpo) if AGENT_PREPROCESS_EMAIL else state.cuerpo
+        if AGENT_PREPROCESS_EMAIL:
+            print(f"[PREPROCESS] cuerpo original: {len(state.cuerpo)} chars → limpio: {len(cuerpo_llm)} chars", flush=True)
+        prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {cuerpo_llm}"
         if state.retry_feedback:
             prompt += (
                 f"\n\n⚠️ INTENTO ANTERIOR RECHAZADO: {state.retry_feedback}\n"
