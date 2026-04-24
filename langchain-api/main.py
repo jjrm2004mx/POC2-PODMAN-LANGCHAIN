@@ -43,6 +43,7 @@ def get_llm(provider: str):
         return ChatOllama(
             model=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
+            num_ctx=int(os.getenv("OLLAMA_NUM_CTX", "4096")),
         )
     elif provider == "openai":
         return ChatOpenAI(
