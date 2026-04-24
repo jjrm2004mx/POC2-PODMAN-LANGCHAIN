@@ -54,7 +54,8 @@ async def create_ticket(
         except Exception:
             contenido = b""
         if not contenido:
-            contenido = f"[ARCHIVO DE PRUEBA] {nombre}".encode()
+            print(f"[WARN] Adjunto '{nombre}' sin contenido b64 — omitido", flush=True, file=sys.stdout)
+            continue
         files_ss.append(("anexos", (nombre, contenido, tipo)))
 
     multipart = [(k, (None, str(v), "text/plain")) for k, v in data.items()]
@@ -132,7 +133,8 @@ async def add_attachments(
         except Exception:
             contenido = b""
         if not contenido:
-            contenido = f"[ARCHIVO DE PRUEBA] {nombre}".encode()
+            print(f"[WARN] Adjunto '{nombre}' sin contenido b64 — omitido", flush=True, file=sys.stdout)
+            continue
         files_ss.append(("anexos", (nombre, contenido, tipo)))
 
     async with httpx.AsyncClient(timeout=TICKET_MGMT_TIMEOUT) as client:
