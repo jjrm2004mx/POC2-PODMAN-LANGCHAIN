@@ -91,7 +91,13 @@ async def classify_node(state: AgentState) -> AgentState:
         cuerpo_llm = clean_email_body(state.cuerpo) if AGENT_PREPROCESS_EMAIL else state.cuerpo
         if AGENT_PREPROCESS_EMAIL:
             print(f"[PREPROCESS] cuerpo original: {len(state.cuerpo)} chars → limpio: {len(cuerpo_llm)} chars", flush=True)
+        else:
+            print(f"[CLASSIFY] cuerpo: {len(state.cuerpo)} chars", flush=True)
+        adj_nombres = [a.get("nombre", "?") for a in (state.adjuntos or [])]
+        if adj_nombres:
+            print(f"[CLASSIFY] adjuntos recibidos ({len(adj_nombres)}): {adj_nombres}", flush=True)
         prompt = f"ASUNTO: {state.asunto}\n\nCUERPO: {cuerpo_llm}"
+        print(f"[CLASSIFY] prompt total: {len(prompt)} chars → enviando a {state.provider}", flush=True)
         if state.retry_feedback:
             prompt += (
                 f"\n\n⚠️ INTENTO ANTERIOR RECHAZADO: {state.retry_feedback}\n"
@@ -245,7 +251,7 @@ async def save_node(state: AgentState) -> AgentState:
             remitente=state.remitente or "",
             nombre_remitente=state.nombre_remitente or "",
             external_id=str(ticket_id),
-            adjuntos=state.adjuntos or [],
+            adjuntos=[],  # Los adjuntos con b64 se suben desde main.py tras el grafo
         )
         await update_ticket_external_id(ticket_id, external_ticket_id)
         state.classification["external_ticket_id"] = external_ticket_id

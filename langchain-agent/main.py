@@ -11,6 +11,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL, enrich_ticket
 from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, get_ticket_by_references, insert_enrichment
+from clients.ticket_mgmt import add_attachments
 
 app = FastAPI(
     title="shared-services-classifier — Agent",
@@ -354,7 +355,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             email_type=email_type,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
-            adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
+            adjuntos=[{"nombre": adj.nombre, "tipo": adj.tipo} for adj in (request.adjuntos or [])],
         )
 
         final_state = await agent.ainvoke(initial_state)
@@ -378,6 +379,18 @@ async def process_email_job(job_id: str, request: ProcessRequest):
                     )
             finally:
                 await conn.close()
+
+        # Subir archivos adjuntos a ticket-management-backend (fuera del grafo para no contaminar el estado)
+        external_ticket_id = classification.get("external_ticket_id") if classification else None
+        if external_ticket_id and request.adjuntos:
+            adj_con_b64 = [adj.dict() for adj in request.adjuntos if adj.contenido_b64]
+            if adj_con_b64:
+                print(f"[ADJUNTOS] Subiendo {len(adj_con_b64)} adjunto(s) al ticket {external_ticket_id}", flush=True)
+                try:
+                    n = await add_attachments(external_ticket_id=external_ticket_id, adjuntos=adj_con_b64)
+                    print(f"[ADJUNTOS] {n} adjunto(s) subidos correctamente", flush=True)
+                except Exception as e:
+                    print(f"[WARN ADJUNTOS] Error subiendo adjuntos: {type(e).__name__}: {e}", flush=True)
 
         # Persistir ejecución en ss_agent_runs
         duracion_ms = int((time.time() - start_time) * 1000)
