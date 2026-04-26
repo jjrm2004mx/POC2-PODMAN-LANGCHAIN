@@ -244,6 +244,7 @@ async def save_node(state: AgentState) -> AgentState:
         external_ticket_id = await create_ticket(
             asunto=nombre_ticket,
             cuerpo=descripcion,
+            cuerpo_html=state.cuerpo_html,
             dominio=dominio,
             categoria=categoria,
             prioridad=prioridad,

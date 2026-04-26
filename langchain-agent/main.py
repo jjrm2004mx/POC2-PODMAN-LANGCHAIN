@@ -54,6 +54,7 @@ class ProcessRequest(BaseModel):
     fecha_correo: Optional[str] = None      # Fecha ISO del correo
     origen: Optional[str] = None            # Proveedor: gmail, outlook, etc.
     adjuntos: Optional[List[AdjuntoInfo]] = []
+    cuerpo_html: Optional[str] = None
     provider: Optional[str] = None
     max_iterations: Optional[int] = None
 
@@ -345,6 +346,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
         initial_state = AgentState(
             asunto=request.asunto,
             cuerpo=request.cuerpo,
+            cuerpo_html=request.cuerpo_html,
             origen=request.origen or "webhook",
             remitente=request.remitente,
             nombre_remitente=request.nombre_remitente,

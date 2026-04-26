@@ -117,6 +117,7 @@ class ClasificacionSchema(BaseModel):
 class AgentState(BaseModel):
     asunto:            str
     cuerpo:            str
+    cuerpo_html:       Optional[str] = None
     origen:            str = "webhook"
     remitente:         Optional[str] = None
     nombre_remitente:  Optional[str] = None
