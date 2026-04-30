@@ -10,7 +10,7 @@ from typing import Optional, List
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL, enrich_ticket
-from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, get_ticket_by_references, insert_enrichment
+from db.queries import get_ticket_by_email_id, get_ticket_by_thread_id, get_ticket_by_references, insert_enrichment, insert_adjunto
 from clients.ticket_mgmt import add_attachments
 
 app = FastAPI(
@@ -371,16 +371,11 @@ async def process_email_job(job_id: str, request: ProcessRequest):
 
         # Guardar metadata de adjuntos en ss_adjuntos (sin contenido)
         if ticket_id and request.adjuntos:
-            conn = await asyncpg.connect(DATABASE_URL)
-            try:
-                for adj in request.adjuntos:
-                    await conn.execute(
-                        """INSERT INTO ss_adjuntos (ticket_id, nombre, tipo_mime)
-                           VALUES ($1, $2, $3)""",
-                        ticket_id, adj.nombre, adj.tipo,
-                    )
-            finally:
-                await conn.close()
+            for adj in request.adjuntos:
+                try:
+                    await insert_adjunto(ticket_id, adj.nombre, adj.tipo)
+                except Exception as e:
+                    print(f"[WARN ss_adjuntos] Error guardando metadata de '{adj.nombre}': {e}", flush=True)
 
         # Subir archivos adjuntos a ticket-management-backend (fuera del grafo para no contaminar el estado)
         external_ticket_id = classification.get("external_ticket_id") if classification else None

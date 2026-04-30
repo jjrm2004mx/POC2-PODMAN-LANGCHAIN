@@ -138,6 +138,10 @@ async def add_attachments(
             continue
         files_ss.append(("anexos", (nombre, contenido, tipo)))
 
+    if not files_ss:
+        print("[WARN add_attachments] Todos los adjuntos fueron omitidos (b64 vacío o inválido) — nada que subir", flush=True, file=sys.stdout)
+        return 0
+
     async with httpx.AsyncClient(timeout=TICKET_MGMT_TIMEOUT) as client:
         resp = await client.post(
             f"{TICKET_MGMT_API_URL}/internal/tickets/{external_ticket_id}/attachments",

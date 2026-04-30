@@ -2,6 +2,7 @@ import os
 import re
 import json
 import httpx
+import asyncpg
 from typing import Optional, List
 
 from agent.state import (
@@ -13,7 +14,7 @@ from agent.catalog import _cargar_catalogo_remoto, _catalogo
 from agent.prompts import build_system_prompt, SYSTEM_ENRICH
 from db.queries import (
     insert_ticket, update_ticket_external_id,
-    insert_enrichment,
+    insert_enrichment, get_ticket_by_email_id,
 )
 from clients.ticket_mgmt import create_ticket, add_comment, add_attachments
 
@@ -212,25 +213,47 @@ async def save_node(state: AgentState) -> AgentState:
         alerta = f"📌 Ticket de {categoria} registrado con prioridad {prioridad}"
 
     # Paso 1 — guardar en BD local
-    ticket_id = await insert_ticket(
-        cuerpo=state.cuerpo,
-        asunto=state.asunto,
-        dominio=dominio,
-        categoria=categoria,
-        prioridad=prioridad,
-        confianza=float(confianza),
-        origen=state.origen,
-        remitente=state.remitente,
-        nombre_remitente=state.nombre_remitente,
-        alerta=alerta,
-        categoria_propuesta=categoria_propuesta,
-        requiere_revision=requiere_revision,
-        conversation_id=state.conversation_id,
-        email_id=state.email_id,
-        thread_id=state.thread_id,
-        fecha_correo=state.fecha_correo,
-        email_type=state.email_type,
-    )
+    try:
+        ticket_id = await insert_ticket(
+            cuerpo=state.cuerpo,
+            asunto=state.asunto,
+            dominio=dominio,
+            categoria=categoria,
+            prioridad=prioridad,
+            confianza=float(confianza),
+            origen=state.origen,
+            remitente=state.remitente,
+            nombre_remitente=state.nombre_remitente,
+            alerta=alerta,
+            categoria_propuesta=categoria_propuesta,
+            requiere_revision=requiere_revision,
+            conversation_id=state.conversation_id,
+            email_id=state.email_id,
+            thread_id=state.thread_id,
+            fecha_correo=state.fecha_correo,
+            email_type=state.email_type,
+        )
+    except asyncpg.exceptions.UniqueViolationError:
+        # Condición de carrera: otro worker ya insertó este email_id antes de que
+        # el chequeo de dedup en main.py pudiera detectarlo.
+        # Recuperamos el ticket existente para que el grafo termine normalmente
+        # y main.py pueda subir los adjuntos al external_ticket_id correcto.
+        print(
+            f"[WARN save_node] UniqueViolationError email_id={state.email_id} "
+            "— recuperando ticket existente para continuar con adjuntos",
+            flush=True,
+        )
+        existing = await get_ticket_by_email_id(state.email_id)
+        if existing:
+            state.classification["ticket_id"]          = existing["id"]
+            state.classification["external_ticket_id"] = existing.get("external_ticket_id")
+            state.classification["alerta"]             = alerta
+            state.classification["categoria_propuesta"] = categoria_propuesta
+            state.classification["requiere_revision"]  = requiere_revision
+            state.classification["nombre_ticket"]      = nombre_ticket
+            state.classification["descripcion"]        = descripcion
+            return state
+        raise
 
     state.classification["ticket_id"]           = ticket_id
     state.classification["alerta"]              = alerta
@@ -338,8 +361,24 @@ Mensaje:
             print(f"[WARN enrich_ticket] Error en evaluación LLM: {repr(e)}", flush=True)
             return {"relevante": False, "razon": f"error LLM: {repr(e)}", "comment_id": None, "adjuntos_agregados": 0}
 
+    # Subir adjuntos independientemente de la relevancia del cuerpo del correo
+    adjuntos_agregados = 0
+    if adjuntos:
+        try:
+            adjuntos_agregados = await add_attachments(
+                external_ticket_id=external_ticket_id,
+                adjuntos=adjuntos,
+            )
+        except Exception as e:
+            print(f"[WARN enrich_ticket] Error agregando adjuntos: {e}", flush=True)
+
     if not llm_result.get("relevante"):
-        return {"relevante": False, "razon": llm_result.get("razon"), "comment_id": None, "adjuntos_agregados": 0}
+        return {
+            "relevante":          False,
+            "razon":              llm_result.get("razon"),
+            "comment_id":         None,
+            "adjuntos_agregados": adjuntos_agregados,
+        }
 
     nombre  = nombre_remitente or "Remitente"
     email   = remitente or ""
@@ -350,9 +389,7 @@ Mensaje:
         resumen = f"Información adicional recibida: {cuerpo_corto}"
     texto_comentario = f"{nombre} <{email}> {resumen}" if email else f"{nombre} {resumen}"
 
-    comment_id         = None
-    adjuntos_agregados = 0
-
+    comment_id = None
     try:
         comment_id = await add_comment(
             external_ticket_id=external_ticket_id,
@@ -366,15 +403,6 @@ Mensaje:
         )
     except Exception as e:
         print(f"[WARN enrich_ticket] Error agregando comentario: {repr(e)}", flush=True)
-
-    if adjuntos:
-        try:
-            adjuntos_agregados = await add_attachments(
-                external_ticket_id=external_ticket_id,
-                adjuntos=adjuntos,
-            )
-        except Exception as e:
-            print(f"[WARN enrich_ticket] Error agregando adjuntos: {e}", flush=True)
 
     return {
         "relevante":          True,
