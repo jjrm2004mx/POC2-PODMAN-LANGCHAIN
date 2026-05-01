@@ -96,7 +96,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             conn = await asyncpg.connect(DATABASE_URL)
             try:
                 ticket_existente = await conn.fetchval(
-                    "SELECT id FROM ss_tickets WHERE conversation_id = $1",
+                    "SELECT id FROM tickets WHERE conversation_id = $1",
                     request.conversation_id,
                 )
             finally:
@@ -144,28 +144,28 @@ async def process_email_job(job_id: str, request: ProcessRequest):
         cached          = final_state.get("cached", False)
         ticket_id       = classification.get("ticket_id") if classification else None
 
-        # Guardar metadata de adjuntos en ss_adjuntos (sin contenido)
+        # Guardar metadata de adjuntos en attachments (sin contenido)
         if ticket_id and request.adjuntos:
             conn = await asyncpg.connect(DATABASE_URL)
             try:
                 for adj in request.adjuntos:
                     await conn.execute(
-                        """INSERT INTO ss_adjuntos (ticket_id, nombre, tipo_mime)
+                        """INSERT INTO attachments (ticket_id, filename, content_type)
                            VALUES ($1, $2, $3)""",
                         ticket_id, adj.nombre, adj.tipo,
                     )
             finally:
                 await conn.close()
 
-        # Persistir ejecución en ss_agent_runs
+        # Persistir ejecución en agent_runs
         duracion_ms = int((time.time() - start_time) * 1000)
         try:
             conn = await asyncpg.connect(DATABASE_URL)
             try:
                 await conn.execute(
-                    """INSERT INTO ss_agent_runs
-                       (run_id, ticket_id, iterations_used, validated,
-                        provider_usado, resultado, duracion_ms)
+                    """INSERT INTO agent_runs
+                       (run_id, ticket_id, iterations_used, is_validated,
+                        provider, result, duration_ms)
                        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)""",
                     run_id,
                     ticket_id,
@@ -178,7 +178,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             finally:
                 await conn.close()
         except Exception as e:
-            print(f"[ERROR ss_agent_runs] {e}", flush=True)
+            print(f"[ERROR agent_runs] {e}", flush=True)
 
         # Actualizar Redis con resultado final
         result = {

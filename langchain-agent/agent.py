@@ -101,7 +101,7 @@ DATABASE_URL = (
     f":{os.getenv('POSTGRES_PASSWORD', 'admin')}"
     f"@{os.getenv('POSTGRES_HOST', 'postgres')}"
     f":{os.getenv('POSTGRES_PORT', '5432')}"
-    f"/{os.getenv('POSTGRES_DB', 'ai')}"
+    f"/{os.getenv('POSTGRES_DB', 'classifier_db')}"
 )
 
 class ClasificacionSchema(BaseModel):
@@ -360,9 +360,9 @@ async def save_node(state: AgentState) -> AgentState:
     conn = await asyncpg.connect(DATABASE_URL)
     try:
         ticket_id = await conn.fetchval(
-            """INSERT INTO ss_tickets
-               (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
-                nombre_remitente, alerta, categoria_propuesta, requiere_revision, conversation_id)
+            """INSERT INTO tickets
+               (body, subject, domain, category, priority, confidence, source, sender,
+                sender_name, alert, suggested_category, requires_review, conversation_id)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                RETURNING id""",
             state.cuerpo,
@@ -448,7 +448,7 @@ async def save_node(state: AgentState) -> AgentState:
         conn = await asyncpg.connect(DATABASE_URL)
         try:
             await conn.execute(
-                "UPDATE ss_tickets SET external_ticket_id = $1 WHERE id = $2",
+                "UPDATE tickets SET external_ticket_id = $1 WHERE id = $2",
                 external_ticket_id,
                 ticket_id,
             )
