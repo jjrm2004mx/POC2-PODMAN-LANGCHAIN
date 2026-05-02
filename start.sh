@@ -30,7 +30,7 @@ echo "[start.sh] TICKET_MGMT_API_URL actualizado: http://$WSL_HOST_IP:8080/api/v
 
 # Levantar el stack forzando recreación para que tome los nuevos env vars
 cd "$STACK_DIR"
-podman-compose down
+podman-compose down 2>/dev/null || true
 podman-compose up -d
 
 echo "[start.sh] Stack levantado. Verificando contenedores..."
