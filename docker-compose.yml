@@ -33,7 +33,7 @@ services:
       - LANGCHAIN_API_URL=http://langchain-api:8000
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-ai}
+      - POSTGRES_DB=${POSTGRES_DB:-classifier_db}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
       - REDIS_HOST=redis
@@ -142,22 +142,20 @@ services:
 
   # ---------------------------------------------------------------------------
   # BASE DE DATOS — PostgreSQL 15
-  # DB: ai | Tablas: ss_tickets, ss_agent_runs
+  # DB: classifier_db | Tablas: tickets, agent_runs, attachments
   # Conexión interna: postgres:5432
   # ---------------------------------------------------------------------------
   postgres:
     image: docker.io/postgres:15
     container_name: postgres
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
-      POSTGRES_DB: ${POSTGRES_DB:-ai}
+      POSTGRES_DB: ${POSTGRES_DB:-classifier_db}
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-ai}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-classifier_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
