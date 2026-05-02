@@ -31,8 +31,8 @@ services:
       - AGENT_HOST=0.0.0.0
       - AGENT_PORT=8001
       - LANGCHAIN_API_URL=http://langchain-api:8000
-      - POSTGRES_HOST=classifier-db
-      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=${POSTGRES_HOST:-classifier-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - POSTGRES_DB=${POSTGRES_DB:-classifier_db}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
