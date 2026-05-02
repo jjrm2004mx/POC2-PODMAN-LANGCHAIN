@@ -33,6 +33,7 @@ Instrumentator().instrument(app).expose(app)
 redis_client = redis.Redis(
     host=os.getenv("REDIS_HOST", "redis"),
     port=int(os.getenv("REDIS_PORT", "6379")),
+    password=os.getenv("REDIS_PASSWORD") or None,
     decode_responses=True,
 )
 CACHE_TTL = 3600  # 1 hora

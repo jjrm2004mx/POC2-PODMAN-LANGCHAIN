@@ -26,6 +26,7 @@ Instrumentator().instrument(app).expose(app)
 
 redis_client = aioredis.from_url(
     f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}",
+    password=os.getenv("REDIS_PASSWORD") or None,
     decode_responses=True,
 )
 
