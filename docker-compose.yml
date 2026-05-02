@@ -31,7 +31,7 @@ services:
       - AGENT_HOST=0.0.0.0
       - AGENT_PORT=8001
       - LANGCHAIN_API_URL=http://langchain-api:8000
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=classifier-db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB:-classifier_db}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
@@ -67,7 +67,7 @@ services:
     volumes:
       - ./langchain-agent:/app    # Hot reload en desarrollo
     depends_on:
-      postgres:
+      classifier-db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -143,17 +143,19 @@ services:
   # ---------------------------------------------------------------------------
   # BASE DE DATOS — PostgreSQL 15
   # DB: classifier_db | Tablas: tickets, agent_runs, attachments
-  # Conexión interna: postgres:5432
+  # Conexión interna: classifier-db:5432
   # ---------------------------------------------------------------------------
-  postgres:
-    image: docker.io/postgres:15
-    container_name: postgres
+  classifier-db:
+    image: docker.io/postgres:15-alpine
+    container_name: classifier-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
       POSTGRES_DB: ${POSTGRES_DB:-classifier_db}
+    ports:
+      - "5432:5432"
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - classifier_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-classifier_db}"]
       interval: 10s
@@ -162,6 +164,7 @@ services:
       start_period: 20s
     networks:
       - ai-network
+      - shared-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -338,3 +341,6 @@ networks:
   #   podman network create shared-network
   shared-network:
     external: true
+
+volumes:
+  classifier_postgres_data:
