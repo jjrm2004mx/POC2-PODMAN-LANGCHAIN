@@ -2,14 +2,15 @@ import os
 import time
 import uuid
 import json
-import asyncpg
 import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional, List
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS, DATABASE_URL
+from agent import agent, AgentState, MAX_ITERATIONS, AGENT_DOMAINS
+from db.engine import AsyncSessionLocal
+from db.queries import get_ticket_by_conversation_id, insert_attachment, insert_agent_run
 
 app = FastAPI(
     title="shared-services-classifier — Agent",
@@ -45,6 +46,7 @@ class ProcessRequest(BaseModel):
     remitente: Optional[str] = None
     nombre_remitente: Optional[str] = None
     conversation_id: Optional[str] = None   # ID del hilo Outlook — deduplicación
+    email_received_at: Optional[str] = None
     adjuntos: Optional[List[AdjuntoInfo]] = []
     provider: Optional[str] = None
     max_iterations: Optional[int] = None
@@ -93,14 +95,10 @@ async def process_email_job(job_id: str, request: ProcessRequest):
     # ─── DEDUPLICACIÓN: ignorar si ya existe un ticket para este hilo ─────────
     if request.conversation_id:
         try:
-            conn = await asyncpg.connect(DATABASE_URL)
-            try:
-                ticket_existente = await conn.fetchval(
-                    "SELECT id FROM ss_tickets WHERE conversation_id = $1",
-                    request.conversation_id,
+            async with AsyncSessionLocal() as session:
+                ticket_existente = await get_ticket_by_conversation_id(
+                    session, request.conversation_id
                 )
-            finally:
-                await conn.close()
 
             if ticket_existente:
                 print(
@@ -130,6 +128,7 @@ async def process_email_job(job_id: str, request: ProcessRequest):
             remitente=request.remitente,
             nombre_remitente=request.nombre_remitente,
             conversation_id=request.conversation_id,
+            email_received_at=request.email_received_at,
             provider=request.provider or os.getenv("AGENT_PROVIDER", "ollama"),
             max_iterations=request.max_iterations or MAX_ITERATIONS,
             adjuntos=[adj.dict() for adj in (request.adjuntos or [])],
@@ -144,41 +143,30 @@ async def process_email_job(job_id: str, request: ProcessRequest):
         cached          = final_state.get("cached", False)
         ticket_id       = classification.get("ticket_id") if classification else None
 
-        # Guardar metadata de adjuntos en ss_adjuntos (sin contenido)
+        # Guardar metadata de adjuntos en attachments (sin contenido)
         if ticket_id and request.adjuntos:
-            conn = await asyncpg.connect(DATABASE_URL)
-            try:
-                for adj in request.adjuntos:
-                    await conn.execute(
-                        """INSERT INTO ss_adjuntos (ticket_id, nombre, tipo_mime)
-                           VALUES ($1, $2, $3)""",
-                        ticket_id, adj.nombre, adj.tipo,
-                    )
-            finally:
-                await conn.close()
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    for adj in request.adjuntos:
+                        await insert_attachment(session, ticket_id, adj.nombre, adj.tipo)
 
-        # Persistir ejecución en ss_agent_runs
+        # Persistir ejecución en agent_runs
         duracion_ms = int((time.time() - start_time) * 1000)
         try:
-            conn = await asyncpg.connect(DATABASE_URL)
-            try:
-                await conn.execute(
-                    """INSERT INTO ss_agent_runs
-                       (run_id, ticket_id, iterations_used, validated,
-                        provider_usado, resultado, duracion_ms)
-                       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)""",
-                    run_id,
-                    ticket_id,
-                    iterations_used,
-                    validated,
-                    initial_state.provider,
-                    json.dumps(classification) if classification else None,
-                    duracion_ms,
-                )
-            finally:
-                await conn.close()
+            async with AsyncSessionLocal() as session:
+                async with session.begin():
+                    await insert_agent_run(
+                        session,
+                        run_id=run_id,
+                        ticket_id=ticket_id,
+                        iterations_used=iterations_used,
+                        is_validated=validated,
+                        provider=initial_state.provider,
+                        result=classification,
+                        duration_ms=duracion_ms,
+                    )
         except Exception as e:
-            print(f"[ERROR ss_agent_runs] {e}", flush=True)
+            print(f"[ERROR agent_runs] {e}", flush=True)
 
         # Actualizar Redis con resultado final
         result = {

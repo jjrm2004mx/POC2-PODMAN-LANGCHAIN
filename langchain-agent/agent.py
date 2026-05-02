@@ -7,11 +7,13 @@ import os
 import json
 import base64
 import httpx
-import asyncpg
 from difflib import SequenceMatcher
 from langgraph.graph import StateGraph, END
 from pydantic import BaseModel, validator, root_validator
 from typing import Optional, List
+
+from db.engine import AsyncSessionLocal
+from db.queries import insert_ticket, update_ticket_external_id
 
 AGENT_DOMAINS = os.getenv("AGENT_DOMAINS", "IT,cliente,operaciones,otro").split(",")
 MAX_ITERATIONS = int(os.getenv("AGENT_MAX_ITERATIONS", "5"))
@@ -96,13 +98,6 @@ LANGCHAIN_API_URL = os.getenv("LANGCHAIN_API_URL", "http://langchain-api:8000")
 AGENT_MOCK_CLASSIFY = os.getenv("AGENT_MOCK_CLASSIFY", "false").lower() == "true"
 TICKET_MGMT_API_URL = os.getenv("TICKET_MGMT_API_URL")
 TICKET_MGMT_API_KEY = os.getenv("TICKET_MGMT_API_KEY", "change-this-secret-key-in-production")
-DATABASE_URL = (
-    f"postgresql://{os.getenv('POSTGRES_USER', 'admin')}"
-    f":{os.getenv('POSTGRES_PASSWORD', 'admin')}"
-    f"@{os.getenv('POSTGRES_HOST', 'postgres')}"
-    f":{os.getenv('POSTGRES_PORT', '5432')}"
-    f"/{os.getenv('POSTGRES_DB', 'ai')}"
-)
 
 class ClasificacionSchema(BaseModel):
     dominio: str
@@ -166,6 +161,7 @@ class AgentState(BaseModel):
     max_iterations: int = MAX_ITERATIONS
     classification: Optional[dict] = None
     adjuntos: Optional[List[dict]] = []   # [{nombre, tipo, contenido_b64}, ...]
+    email_received_at: Optional[str] = None
     validated: bool = False
     cached: bool = False
     error: Optional[str] = None
@@ -357,30 +353,25 @@ async def save_node(state: AgentState) -> AgentState:
         alerta = f"📌 Ticket de {categoria} registrado con prioridad {prioridad}"
 
     # ─── PASO 1: guardar en nuestra BD ────────────────────────────────────────
-    conn = await asyncpg.connect(DATABASE_URL)
-    try:
-        ticket_id = await conn.fetchval(
-            """INSERT INTO ss_tickets
-               (texto, asunto, dominio, categoria, prioridad, confianza, origen, remitente,
-                nombre_remitente, alerta, categoria_propuesta, requiere_revision, conversation_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-               RETURNING id""",
-            state.cuerpo,
-            state.asunto,
-            dominio,
-            categoria,
-            prioridad,
-            float(confianza),
-            state.origen,
-            state.remitente,
-            state.nombre_remitente,
-            alerta,
-            categoria_propuesta,
-            requiere_revision,
-            state.conversation_id,
-        )
-    finally:
-        await conn.close()
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            ticket_id = await insert_ticket(
+                session,
+                body=state.cuerpo,
+                subject=state.asunto,
+                domain=dominio,
+                category=categoria,
+                priority=prioridad,
+                confidence=float(confianza),
+                source=state.origen,
+                sender=state.remitente,
+                sender_name=state.nombre_remitente,
+                alert=alerta,
+                suggested_category=categoria_propuesta,
+                requires_review=requiere_revision,
+                conversation_id=state.conversation_id,
+                email_received_at=state.email_received_at,
+            )
 
     state.classification["ticket_id"]           = ticket_id
     state.classification["alerta"]              = alerta
@@ -445,15 +436,9 @@ async def save_node(state: AgentState) -> AgentState:
             )
 
         # ─── PASO 3: actualizar nuestra BD con el ID externo ──────────────────
-        conn = await asyncpg.connect(DATABASE_URL)
-        try:
-            await conn.execute(
-                "UPDATE ss_tickets SET external_ticket_id = $1 WHERE id = $2",
-                external_ticket_id,
-                ticket_id,
-            )
-        finally:
-            await conn.close()
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await update_ticket_external_id(session, ticket_id, external_ticket_id)
 
         state.classification["external_ticket_id"] = external_ticket_id
 

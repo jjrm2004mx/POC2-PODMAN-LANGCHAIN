@@ -16,6 +16,7 @@ pydantic
 
 # Base de datos async
 asyncpg
+sqlalchemy[asyncio]
 
 # HTTP cliente async (llamadas entre servicios)
 httpx

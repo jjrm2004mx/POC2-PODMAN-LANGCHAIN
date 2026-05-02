@@ -38,6 +38,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-shared-services-classifier-dev}
@@ -56,7 +57,7 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
       - TICKET_MGMT_API_URL=${TICKET_MGMT_API_URL}  # Requerido — definir en .env (ver env.txt)
-      - TICKET_MGMT_API_KEY=${TICKET_MGMT_API_KEY:-change-this-secret-key-in-production}
+      - TICKET_MGMT_API_KEY=${TICKET_MGMT_API_KEY}
       - TICKET_MGMT_CATALOGO_ENABLED=${TICKET_MGMT_CATALOGO_ENABLED:-true}
       - AGENT_MOCK_CLASSIFY=${AGENT_MOCK_CLASSIFY:-false}
       - MOCK_DOMINIO=${MOCK_DOMINIO:-IT}
@@ -104,6 +105,7 @@ services:
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-shared-services-classifier-dev}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     depends_on:
       redis:
         condition: service_healthy
@@ -167,17 +169,19 @@ services:
   # ---------------------------------------------------------------------------
   # CACHE Y ESTADO — Redis 7
   # Usos: cache LLM (MD5, TTL 1h) + estado del agente entre nodos
-  # Sin autenticación — red interna Podman únicamente
   # ---------------------------------------------------------------------------
   redis:
     image: docker.io/redis:7-alpine
     container_name: redis
     ports:
       - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - ./redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $REDIS_PASSWORD ping"]
       interval: 10s
       timeout: 5s
       retries: 5
