@@ -333,6 +333,27 @@ services:
       - ai-network
     restart: unless-stopped
 
+  # Flyway — aplica migraciones al arrancar el stack (one-shot)
+  flyway:
+    image: docker.io/flyway/flyway:10
+    container_name: classifier-flyway
+    command: migrate
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://classifier-db:5432/${POSTGRES_DB:-classifier_db}
+      - FLYWAY_USER=${POSTGRES_USER:-admin}
+      - FLYWAY_PASSWORD=${POSTGRES_PASSWORD:-admin}
+      - FLYWAY_LOCATIONS=filesystem:/flyway/sql
+      - FLYWAY_CLEAN_DISABLED=true
+      - FLYWAY_OUT_OF_ORDER=false
+    volumes:
+      - ./db/migrations/postgresql:/flyway/sql:ro
+    depends_on:
+      classifier-db:
+        condition: service_healthy
+    networks:
+      - ai-network
+    restart: "no"
+
 networks:
   ai-network:
     driver: bridge
