@@ -36,9 +36,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-classifier_db}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-shared-services-classifier-dev}
@@ -52,12 +52,12 @@ services:
       - CATEGORIES_CLIENTE=${CATEGORIES_CLIENTE}
       - CATEGORIES_OPERACIONES=${CATEGORIES_OPERACIONES}
       - CATEGORIES_OTRO=${CATEGORIES_OTRO}
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
       - MINIO_BUCKET=${MINIO_BUCKET:-email-attachments}
-      - TICKET_MGMT_API_URL=${TICKET_MGMT_API_URL}  # Requerido — definir en .env (ver env.txt)
-      - TICKET_MGMT_API_KEY=${TICKET_MGMT_API_KEY}
+      - TICKET_MGMT_API_URL=${TICKET_MGMT_API_URL:-http://ticket-system-backend:8080/api/v1}
+      - TICKET_MGMT_API_KEY=${TICKET_MGMT_API_KEY:-}
       - TICKET_MGMT_CATALOGO_ENABLED=${TICKET_MGMT_CATALOGO_ENABLED:-true}
       - AGENT_MOCK_CLASSIFY=${AGENT_MOCK_CLASSIFY:-false}
       - MOCK_DOMINIO=${MOCK_DOMINIO:-IT}
@@ -103,9 +103,9 @@ services:
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-shared-services-classifier-dev}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     depends_on:
       redis:
         condition: service_healthy
