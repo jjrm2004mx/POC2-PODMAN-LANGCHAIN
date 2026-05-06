@@ -1,16 +1,20 @@
 # =============================================================================
 # shared-services-classifier — Docker Compose (runtime: podman-compose)
-# Ruta raíz: ~/podman/ai-stack
+# Ruta raíz: ~/stack_ticket/ticket-classification
 # Marzo 2026
 # =============================================================================
 # USO:
-#   cd ~/podman/ai-stack && podman-compose up -d
-#   cd ~/podman/ai-stack && podman-compose down
-#   cd ~/podman/ai-stack && podman-compose logs -f langchain-agent
+#   cd ~/stack_ticket/ticket-classification && podman-compose up -d
+#   cd ~/stack_ticket/ticket-classification && podman-compose down
+#   cd ~/stack_ticket/ticket-classification && podman-compose logs -f langchain-agent
 #
 # NOTA Podman rootless:
 #   Todas las imágenes usan prefijo docker.io/ explícito.
 #   Podman no asume docker.io por defecto cuando no hay registries configurados.
+#
+# REDES EXTERNAS (creadas por infra-monitoring/startup.sh):
+#   ticket-classification-network — red interna del stack de clasificación
+#   ticket-management-network     — red compartida con ticket-management, notification, n8n
 # =============================================================================
 
 version: "3.8"
@@ -36,7 +40,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-classifier_db}
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
-      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_HOST=${REDIS_HOST:-classifier-redis}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
@@ -69,15 +73,15 @@ services:
     depends_on:
       classifier-db:
         condition: service_healthy
-      redis:
+      classifier-redis:
         condition: service_healthy
       langchain-api:
         condition: service_started
       minio:
         condition: service_healthy
     networks:
-      - ai-network
-      - shared-network
+      - ticket-classification-network
+      - ticket-management-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -103,16 +107,16 @@ services:
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-shared-services-classifier-dev}
-      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_HOST=${REDIS_HOST:-classifier-redis}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     depends_on:
-      redis:
+      classifier-redis:
         condition: service_healthy
       ollama:
         condition: service_started
     networks:
-      - ai-network
+      - ticket-classification-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -137,7 +141,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     networks:
-      - ai-network
+      - ticket-classification-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -163,17 +167,17 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - ai-network
-      - shared-network
+      - ticket-classification-network
+      - ticket-management-network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
   # CACHE Y ESTADO — Redis 7
   # Usos: cache LLM (MD5, TTL 1h) + estado del agente entre nodos
   # ---------------------------------------------------------------------------
-  redis:
+  classifier-redis:
     image: docker.io/redis:7-alpine
-    container_name: redis
+    container_name: classifier-redis
     ports:
       - "6379:6379"
     environment:
@@ -188,123 +192,9 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - ai-network
+      - ticket-classification-network
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Prometheus
-  # Scrape cada 15s a todos los servicios con /metrics
-  # ---------------------------------------------------------------------------
-  prometheus:
-    image: docker.io/prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Grafana
-  # Dashboards: métricas Prometheus + logs Loki
-  # URL: http://localhost:3000 | Credenciales: admin / admin (o GRAFANA_PASSWORD)
-  #
-  # NOTA permisos Podman rootless:
-  #   Si grafana_data da Permission denied, ejecutar:
-  #   podman unshare chown -R 472:472 grafana_data/
-  # ---------------------------------------------------------------------------
-  grafana:
-    image: docker.io/grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-    volumes:
-      - ./grafana_data:/var/lib/grafana
-      - ./grafana-provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana-provisioning/dashboard-files:/etc/grafana/provisioning/dashboard-files:ro
-    depends_on:
-      - prometheus
-      - loki
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Node Exporter
-  # Métricas del host: CPU, RAM, disco, carga (best effort en WSL2)
-  # Especialmente útil para monitorear impacto de inferencia Ollama
-  # ---------------------------------------------------------------------------
-  node-exporter:
-    image: docker.io/prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - --path.procfs=/host/proc
-      - --path.sysfs=/host/sys
-      - --collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Loki
-  # Agrega logs de todos los contenedores Podman
-  # URL interna: loki:3100
-  # Versión 2.9.0 — misma versión que Promtail para compatibilidad garantizada
-  # ---------------------------------------------------------------------------
-  loki:
-    image: docker.io/grafana/loki:2.9.0
-    container_name: loki
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILIDAD — Promtail 2.9.0
-  # Lee logs desde journald (compatible WSL2 y Linux nativo)
-  # IMPORTANTE: usar versión 2.9.0 — promtail:latest (3.x) no incluye
-  # soporte para journald compilado.
-  #
-  # Volúmenes montados:
-  #   /var/log/journal  → archivos de journal persistentes
-  #   /run/log/journal  → journal en memoria (si existe)
-  #   /etc/machine-id   → identificador de máquina requerido por journald
-  #
-  # NOTA WSL2 permisos:
-  #   sudo chmod o+r /var/log/journal/<machine-id>/*.journal
-  # ---------------------------------------------------------------------------
-  promtail:
-    image: docker.io/grafana/promtail:2.9.0
-    container_name: promtail
-    volumes:
-      - /var/log/journal:/var/log/journal:ro
-      - /run/log/journal:/run/log/journal:ro
-      - /etc/machine-id:/etc/machine-id:ro
-      - ./promtail.yml:/etc/promtail/config.yml:ro
-    command: -config.file=/etc/promtail/config.yml
-    depends_on:
-      - loki
-    networks:
-      - ai-network
-    restart: unless-stopped
-
-# =============================================================================
-# RED INTERNA
-# Red explícita para garantizar resolución de nombres estable entre reinicios
-# =============================================================================
   # ---------------------------------------------------------------------------
   # ALMACENAMIENTO DE OBJETOS — MinIO
   # Guarda archivos adjuntos de correos (Excel, PDF, etc.)
@@ -330,10 +220,12 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      - ai-network
+      - ticket-classification-network
     restart: unless-stopped
 
-  # Flyway — aplica migraciones al arrancar el stack (one-shot)
+  # ---------------------------------------------------------------------------
+  # MIGRACIONES — Flyway (one-shot al arrancar)
+  # ---------------------------------------------------------------------------
   flyway:
     image: docker.io/flyway/flyway:10
     container_name: classifier-flyway
@@ -351,16 +243,20 @@ services:
       classifier-db:
         condition: service_healthy
     networks:
-      - ai-network
+      - ticket-classification-network
     restart: "no"
 
+# =============================================================================
+# REDES EXTERNAS
+# Creadas por infra-monitoring/startup.sh con subnets dedicadas.
+# Crear manualmente si arrancas este stack de forma aislada:
+#   podman network create --subnet 10.89.1.0/24 ticket-management-network
+#   podman network create --subnet 10.89.2.0/24 ticket-classification-network
+# =============================================================================
 networks:
-  ai-network:
-    driver: bridge
-  # Red compartida con ticket-management-backend
-  # Crear una vez en Podman antes de levantar ambos stacks:
-  #   podman network create shared-network
-  shared-network:
+  ticket-classification-network:
+    external: true
+  ticket-management-network:
     external: true
 
 volumes:
